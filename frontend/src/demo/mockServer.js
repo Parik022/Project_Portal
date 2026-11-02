@@ -3,7 +3,7 @@
 // business rules closely enough to click through every role, but keeps all
 // data in this browser. The real API lives in /backend and has its own tests.
 
-const STORAGE_KEY = "projectflow-demo-db-v1";
+const STORAGE_KEY = "projectflow-demo-db-v2";
 const PASSWORD = "Password123";
 const THRESHOLD = 75;
 const MAX_TEAM_SIZE = 4;
@@ -107,24 +107,27 @@ function seed() {
   });
 
   const projects = [
-    { id: "campus", title: "Smart Campus Attendance", description: "Geofenced attendance and analytics for SRM labs.", facultyId: "priya", progressPercentage: 45, createdAt: iso(start) },
-    { id: "placement", title: "Placement Analytics", description: "Dashboard of placement trends across departments.", facultyId: "arun", progressPercentage: 20, createdAt: iso(start) },
+    { id: "campus", title: "Smart Campus Attendance", description: "Geofenced attendance and analytics for SRM labs.", domain: "Web Development", status: "IN_PROGRESS", startDate: iso(start), deadline: iso(addDays(today, 42)), reviewRemark: null, proposedById: null, facultyId: "priya", progressPercentage: 45, createdAt: iso(start) },
+    { id: "placement", title: "Placement Analytics", description: "Dashboard of placement trends across departments.", domain: "Data Science", status: "IN_PROGRESS", startDate: iso(start), deadline: iso(addDays(today, 10)), reviewRemark: null, proposedById: null, facultyId: "arun", progressPercentage: 20, createdAt: iso(start) },
+    { id: "labtracker", title: "AI Lab Equipment Tracker", description: "Track lab equipment issue and return with QR codes and reminders.", domain: "AI / ML", status: "PROPOSED", startDate: iso(addDays(today, 3)), deadline: iso(addDays(today, 70)), reviewRemark: null, proposedById: "kavya", facultyId: "priya", progressPercentage: 0, createdAt: iso(addDays(today, -1)) },
+    { id: "mess", title: "Hostel Mess Feedback App", description: "Mobile-first feedback for the hostel mess with weekly summaries.", domain: "Mobile", status: "COMPLETED", startDate: iso(addDays(today, -120)), deadline: iso(addDays(today, -30)), reviewRemark: null, proposedById: null, facultyId: "arun", progressPercentage: 100, createdAt: iso(addDays(today, -120)) },
   ];
   const teams = [
-    { id: "alpha", name: "Team Alpha", projectId: "campus" },
-    { id: "beta", name: "Team Beta", projectId: "placement" },
+    { id: "alpha", name: "Team Alpha", projectId: "campus", leaderId: "aarav" },
+    { id: "beta", name: "Team Beta", projectId: "placement", leaderId: "rohan" },
   ];
-  const sub = (o) => ({ id: id(), link: null, feedback: null, reviewedAt: null, createdAt: iso(addDays(start, 7 * o.weekNumber)), ...o });
+  const sub = (o) => ({ id: id(), link: null, feedback: null, reviewedAt: null, createdAt: iso(addDays(start, 7 * o.weekNumber - 2)), ...o });
   const submissions = [
     sub({ weekNumber: 1, title: "Project setup", description: "Set up the repo, database and auth endpoints.", status: "APPROVED", feedback: "Good start.", reviewedAt: iso(addDays(start, 8)), studentId: "aarav", projectId: "campus", link: "https://github.com/Parik022/Project_Portal" }),
     sub({ weekNumber: 2, title: "Attendance API", description: "Daily check-in endpoint with duplicate protection.", status: "CHANGES_REQUESTED", feedback: "Add tests for the duplicate check.", reviewedAt: iso(addDays(start, 15)), studentId: "aarav", projectId: "campus" }),
     sub({ weekNumber: 3, title: "Dashboard", description: "Built the faculty dashboard with live stats.", status: "PENDING", studentId: "aarav", projectId: "campus" }),
     sub({ weekNumber: 1, title: "UI wireframes", description: "Wireframes for student and faculty screens.", status: "APPROVED", reviewedAt: iso(addDays(start, 8)), studentId: "diya", projectId: "campus" }),
-    sub({ weekNumber: 1, title: "Data collection", description: "Collected placement data for three years.", status: "PENDING", studentId: "rohan", projectId: "placement" }),
+    sub({ weekNumber: 1, title: "Data collection", description: "Collected placement data for three years.", status: "PENDING", studentId: "rohan", projectId: "placement", createdAt: iso(addDays(start, 10)) }),
   ];
   const notifications = [
     { id: id(), userId: "admin", message: "Dr. Vikram Rao (faculty.pending@srmist.edu.in) registered as faculty and needs approval", type: "FACULTY_APPROVAL", isRead: false, createdAt: now() },
     { id: id(), userId: "priya", message: "Aarav Mehta submitted the week 3 report", type: "SUBMISSION_CREATED", isRead: false, createdAt: now() },
+    { id: id(), userId: "priya", message: 'Kavya Nair proposed a project: "AI Lab Equipment Tracker"', type: "PROJECT_PROPOSED", isRead: false, createdAt: now() },
     { id: id(), userId: "aarav", message: "Changes requested on your week 2 report", type: "SUBMISSION_REVIEWED", isRead: false, createdAt: now() },
   ];
 
@@ -296,24 +299,33 @@ const submissionScope = (actor, s) =>
   (actor.role === "FACULTY" && db.projects.find((p) => p.id === s.projectId)?.facultyId === actor.id) ||
   (actor.role === "HOD" && findUser(s.studentId)?.department === actor.department);
 
+const withDeadline = (s, p) => {
+  const start = (p.startDate || p.createdAt).slice(0, 10);
+  const dueDate = addDays(start, 7 * s.weekNumber - 1);
+  return { dueDate, isLate: ymdIST(new Date(s.createdAt)) > dueDate };
+};
+
 const submissionView = (s) => {
   const st = findUser(s.studentId);
   const p = db.projects.find((x) => x.id === s.projectId);
   return {
     ...s,
+    ...withDeadline(s, p),
     student: { id: st.id, name: st.name, email: st.email, registerNo: st.registerNo },
     project: { id: p.id, title: p.title, facultyId: p.facultyId },
   };
 };
 
 const membersOf = (teamId) => db.users.filter((x) => x.teamId === teamId).map(brief);
-const teamView = (t) => ({ ...t, project: (({ id: pid, title }) => ({ id: pid, title }))(db.projects.find((p) => p.id === t.projectId)), members: membersOf(t.id) });
+const leaderOf = (t) => (t.leaderId ? { id: t.leaderId, name: findUser(t.leaderId)?.name } : null);
+const teamView = (t) => ({ ...t, project: (({ id: pid, title }) => ({ id: pid, title }))(db.projects.find((p) => p.id === t.projectId)), members: membersOf(t.id), leader: leaderOf(t) });
 const projectView = (p) => {
   const teams = db.teams.filter((t) => t.projectId === p.id);
   return {
     ...p,
     faculty: brief(findUser(p.facultyId)),
-    teams: teams.map((t) => ({ ...t, members: membersOf(t.id), _count: { members: membersOf(t.id).length } })),
+    proposedBy: brief(findUser(p.proposedById)),
+    teams: teams.map((t) => ({ ...t, members: membersOf(t.id), leader: leaderOf(t), _count: { members: membersOf(t.id).length } })),
     _count: { teams: teams.length, submissions: db.submissions.filter((s) => s.projectId === p.id).length },
   };
 };
@@ -535,6 +547,8 @@ route("POST", "/submissions", ["STUDENT"], ({ actor, body }) => {
   done(errors);
   const team = db.teams.find((t) => t.id === actor.teamId);
   if (!team) fail(400, "You must be assigned to a team before submitting");
+  const teamProject = db.projects.find((p) => p.id === team.projectId);
+  if (!["APPROVED", "IN_PROGRESS"].includes(teamProject.status)) fail(400, "Reports can be submitted once your project is approved");
   if (db.submissions.some((s) => s.studentId === actor.id && s.weekNumber === body.weekNumber)) fail(409, "You already submitted a report for this week");
   const s = { id: id(), weekNumber: body.weekNumber, title: body.title.trim(), description: body.description.trim(), link: body.link || null, status: "PENDING", feedback: null, reviewedAt: null, studentId: actor.id, projectId: team.projectId, createdAt: now() };
   db.submissions.push(s);
@@ -570,37 +584,123 @@ route("PATCH", "/submissions/:id/review", ["FACULTY", "ADMIN"], ({ actor, params
 });
 
 // ---- projects
-route("GET", "/projects", ANY, ({ actor }) => {
-  let list;
-  if (actor.role === "FACULTY") list = db.projects.filter((p) => p.facultyId === actor.id);
-  else if (actor.role === "STUDENT") {
-    const team = db.teams.find((t) => t.id === actor.teamId);
-    list = team ? db.projects.filter((p) => p.id === team.projectId) : [];
-  } else if (actor.role === "HOD") list = db.projects.filter((p) => findUser(p.facultyId)?.department === actor.department);
-  else list = db.projects;
-  return ["Projects retrieved", [...list].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map(projectView)];
-});
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const projectScope = (actor) => (p) => {
+  if (actor.role === "FACULTY") return p.facultyId === actor.id;
+  if (actor.role === "HOD") return findUser(p.facultyId)?.department === actor.department;
+  if (actor.role === "ADMIN") return true;
+  const team = db.teams.find((t) => t.id === actor.teamId);
+  return p.proposedById === actor.id || (team && team.projectId === p.id);
+};
 const checkProject = (body, partial) => {
   const errors = {};
-  if ((!partial || body.title !== undefined) && (!body.title || body.title.trim().length < 2)) errors.title = ["Title must be at least 2 characters"];
-  if ((!partial || body.description !== undefined) && (!body.description || body.description.trim().length < 5)) errors.description = ["Description must be at least 5 characters"];
+  const has = (k) => !partial || body[k] !== undefined;
+  if (has("title") && (!body.title || body.title.trim().length < 2)) errors.title = ["Title must be at least 2 characters"];
+  if (has("description") && (!body.description || body.description.trim().length < 5)) errors.description = ["Description must be at least 5 characters"];
+  if (has("domain") && (!body.domain || body.domain.trim().length < 2)) errors.domain = ["Pick a domain"];
+  ["startDate", "deadline"].forEach((k) => body[k] && !DATE_RE.test(body[k]) && (errors[k] = ["Date must be in YYYY-MM-DD format"]));
+  if (body.startDate && body.deadline && body.deadline < body.startDate) errors.deadline = ["Deadline must be on or after the start date"];
   done(errors);
 };
-const ownProject = (actor, pid) => db.projects.find((p) => p.id === pid && p.facultyId === actor.id) || fail(404, "Project not found or access denied");
+const dateValues = (body) => ({
+  ...(body.startDate !== undefined ? { startDate: body.startDate ? iso(body.startDate) : null } : {}),
+  ...(body.deadline !== undefined ? { deadline: body.deadline ? iso(body.deadline) : null } : {}),
+});
+const manageable = (actor, pid) =>
+  db.projects.find((p) => p.id === pid && (actor.role === "ADMIN" || p.facultyId === actor.id)) || fail(404, "Project not found or access denied");
+
+route("GET", "/projects", ANY, ({ actor, query }) => {
+  const scoped = db.projects.filter(projectScope(actor));
+  const q = (query.search || "").toLowerCase();
+  const sort = query.sort || "createdAt";
+  const dir = query.order === "asc" ? 1 : -1;
+  const list = scoped
+    .filter((p) => !query.status || p.status === query.status)
+    .filter((p) => !query.domain || p.domain === query.domain)
+    .filter((p) => !q || p.title.toLowerCase().includes(q) || p.description.toLowerCase().includes(q))
+    .sort((a, b) => {
+      if (sort === "deadline") {
+        if (!a.deadline) return 1;
+        if (!b.deadline) return -1;
+      }
+      const va = a[sort];
+      const vb = b[sort];
+      return (typeof va === "number" ? va - vb : String(va).localeCompare(String(vb))) * dir || b.createdAt.localeCompare(a.createdAt);
+    })
+    .map(projectView);
+  return ["Projects retrieved", { ...paginate(list, { ...query, limit: query.limit || 12 }), domains: [...new Set(scoped.map((p) => p.domain))].sort() }];
+});
+
+route("GET", "/projects/:id", ANY, ({ actor, params }) => {
+  const p = db.projects.find((x) => x.id === params.id && projectScope(actor)(x)) || fail(404, "Project not found");
+  const submissions = db.submissions
+    .filter((s) => s.projectId === p.id && (actor.role !== "STUDENT" || s.studentId === actor.id))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, 10)
+    .map((s) => ({ ...s, ...withDeadline(s, p), student: brief(findUser(s.studentId)) }));
+  return ["Project retrieved", { ...projectView(p), submissions }];
+});
+
 route("POST", "/projects", ["FACULTY"], ({ actor, body }) => {
   checkProject(body);
-  const p = { id: id(), title: body.title.trim(), description: body.description.trim(), progressPercentage: Number(body.progressPercentage) || 0, facultyId: actor.id, createdAt: now() };
+  const p = { id: id(), title: body.title.trim(), description: body.description.trim(), domain: body.domain, status: "APPROVED", startDate: null, deadline: null, ...dateValues(body), reviewRemark: null, proposedById: null, progressPercentage: Number(body.progressPercentage) || 0, facultyId: actor.id, createdAt: now() };
   db.projects.push(p);
   return ["Project created", projectView(p), 201];
 });
-route("PUT", "/projects/:id", ["FACULTY"], ({ actor, params, body }) => {
-  checkProject(body, true);
-  const p = ownProject(actor, params.id);
-  Object.assign(p, { ...body, progressPercentage: body.progressPercentage !== undefined ? Number(body.progressPercentage) : p.progressPercentage });
-  return ["Project updated", projectView(p)];
+
+route("POST", "/projects/proposals", ["STUDENT"], ({ actor, body }) => {
+  checkProject(body);
+  const f = findUser(body.facultyId);
+  if (!f || f.role !== "FACULTY" || !f.isActive) invalid({ facultyId: ["Choose an active faculty member"] });
+  if (db.projects.some((p) => p.proposedById === actor.id && p.status === "PROPOSED")) fail(409, "You already have a proposal waiting for review");
+  const p = { id: id(), title: body.title.trim(), description: body.description.trim(), domain: body.domain, status: "PROPOSED", startDate: null, deadline: null, ...dateValues(body), reviewRemark: null, proposedById: actor.id, progressPercentage: 0, facultyId: f.id, createdAt: now() };
+  db.projects.push(p);
+  notify(f.id, `${actor.name} proposed a project: "${p.title}"`, "PROJECT_PROPOSED");
+  return ["Proposal sent to faculty", projectView(p), 201];
 });
-route("DELETE", "/projects/:id", ["FACULTY"], ({ actor, params }) => {
-  ownProject(actor, params.id);
+
+route("PATCH", "/projects/:id/review", ["FACULTY", "ADMIN"], ({ actor, params, body }) => {
+  if (!["APPROVED", "REJECTED"].includes(body.decision)) invalid({ decision: ["Invalid decision"] });
+  if (body.decision === "REJECTED" && (!body.remark || body.remark.trim().length < 5)) invalid({ remark: ["Explain why the proposal is rejected"] });
+  const p = manageable(actor, params.id);
+  if (p.status !== "PROPOSED") fail(400, "Only proposals waiting for review can be approved or rejected");
+  p.status = body.decision;
+  p.reviewRemark = body.remark?.trim() || null;
+  const proposer = findUser(p.proposedById);
+  if (body.decision === "APPROVED" && proposer && !proposer.teamId) {
+    const t = { id: id(), name: `${p.title} Team`, projectId: p.id, leaderId: proposer.id };
+    db.teams.push(t);
+    proposer.teamId = t.id;
+  }
+  notify(p.proposedById, body.decision === "APPROVED" ? `Your project "${p.title}" was approved` : `Your project "${p.title}" was rejected: ${p.reviewRemark}`, "PROJECT_REVIEWED");
+  return [body.decision === "APPROVED" ? "Proposal approved" : "Proposal rejected", projectView(p)];
+});
+
+const updateProjectRoute = ({ actor, params, body }) => {
+  checkProject(body, true);
+  const p = manageable(actor, params.id);
+  if (body.status && ["PROPOSED", "REJECTED"].includes(p.status)) fail(400, "Review the proposal before changing its status");
+  if (body.status && !["APPROVED", "IN_PROGRESS", "COMPLETED"].includes(body.status)) invalid({ status: ["Invalid status"] });
+  const { startDate, deadline, ...rest } = body;
+  Object.assign(p, rest, dateValues({ startDate, deadline }));
+  if (body.progressPercentage !== undefined) p.progressPercentage = Number(body.progressPercentage);
+  if (body.status === "COMPLETED") p.progressPercentage = 100;
+  return ["Project updated", projectView(p)];
+};
+route("PATCH", "/projects/:id", ["FACULTY", "ADMIN"], updateProjectRoute);
+route("PUT", "/projects/:id", ["FACULTY", "ADMIN"], updateProjectRoute);
+
+route("PATCH", "/projects/:id/faculty", ["ADMIN"], ({ params, body }) => {
+  const f = findUser(body.facultyId);
+  if (!f || f.role !== "FACULTY" || !f.isActive) fail(400, "Choose an active faculty member");
+  const p = db.projects.find((x) => x.id === params.id) || fail(404, "Project not found");
+  p.facultyId = f.id;
+  notify(f.id, `You are now the faculty for "${p.title}"`, "PROJECT_ASSIGNED");
+  return ["Faculty assigned", projectView(p)];
+});
+
+route("DELETE", "/projects/:id", ["FACULTY", "ADMIN"], ({ actor, params }) => {
+  manageable(actor, params.id);
   const teamIds = db.teams.filter((t) => t.projectId === params.id).map((t) => t.id);
   db.users.forEach((x) => teamIds.includes(x.teamId) && (x.teamId = null));
   db.teams = db.teams.filter((t) => t.projectId !== params.id);
@@ -609,13 +709,16 @@ route("DELETE", "/projects/:id", ["FACULTY"], ({ actor, params }) => {
   return ["Project deleted", { message: "Project deleted successfully" }];
 });
 
+const ownProject = (actor, pid) =>
+  db.projects.find((p) => p.id === pid && p.facultyId === actor.id) || fail(404, "Project not found or access denied");
+
 // ---- teams
 route("GET", "/teams", ANY, ({ actor }) => {
   if (actor.role === "STUDENT") {
     const team = db.teams.find((t) => t.id === actor.teamId);
     if (!team) fail(404, "You are not assigned to a team yet");
     const p = db.projects.find((x) => x.id === team.projectId);
-    return ["Team retrieved", { ...team, project: { ...p, faculty: brief(findUser(p.facultyId)) }, members: membersOf(team.id) }];
+    return ["Team retrieved", { ...team, project: { ...p, faculty: brief(findUser(p.facultyId)) }, members: membersOf(team.id), leader: leaderOf(team) }];
   }
   const list = db.teams.filter((t) => {
     const p = db.projects.find((x) => x.id === t.projectId);
@@ -631,8 +734,9 @@ route("GET", "/teams/available-students", ["FACULTY", "ADMIN"], () => [
 ]);
 route("POST", "/teams", ["FACULTY"], ({ actor, body }) => {
   if (!body.name || body.name.trim().length < 2) invalid({ name: ["Team name must be at least 2 characters"] });
-  ownProject(actor, body.projectId);
-  const t = { id: id(), name: body.name.trim(), projectId: body.projectId };
+  const project = ownProject(actor, body.projectId);
+  if (["PROPOSED", "REJECTED"].includes(project.status)) fail(400, "Teams can only be created for approved projects");
+  const t = { id: id(), name: body.name.trim(), projectId: body.projectId, leaderId: null };
   db.teams.push(t);
   return ["Team created", teamView(t), 201];
 });
@@ -652,10 +756,35 @@ route("DELETE", "/teams/:id/members/:studentId", ["FACULTY"], ({ actor, params }
   ownProject(actor, t.projectId);
   const st = db.users.find((x) => x.id === params.studentId && x.teamId === t.id) || fail(404, "Student is not in this team");
   st.teamId = null;
+  if (t.leaderId === st.id) t.leaderId = null;
   return ["Student removed from team", { removed: true }];
+});
+const manageableTeam = (actor, tid) => {
+  const t = db.teams.find((x) => x.id === tid) || fail(404, "Team not found");
+  if (actor.role === "FACULTY") ownProject(actor, t.projectId);
+  return t;
+};
+route("PATCH", "/teams/:id", ["FACULTY", "ADMIN"], ({ actor, params, body }) => {
+  const t = manageableTeam(actor, params.id);
+  if (body.name !== undefined && body.name.trim().length < 2) invalid({ name: ["Team name must be at least 2 characters"] });
+  if (body.leaderId && !db.users.some((x) => x.id === body.leaderId && x.teamId === t.id)) fail(400, "The leader must be a member of this team");
+  if (body.name) t.name = body.name.trim();
+  if (body.leaderId !== undefined) t.leaderId = body.leaderId;
+  if (body.leaderId) notify(body.leaderId, `You are now the leader of ${t.name}`, "TEAM_LEADER");
+  return ["Team updated", teamView(t)];
+});
+route("DELETE", "/teams/:id", ["FACULTY", "ADMIN"], ({ actor, params }) => {
+  manageableTeam(actor, params.id);
+  db.users.forEach((x) => x.teamId === params.id && (x.teamId = null));
+  db.teams = db.teams.filter((t) => t.id !== params.id);
+  return ["Team deleted", { deleted: true }];
 });
 
 // ---- users
+route("GET", "/users/faculty", ANY, () => [
+  "Faculty retrieved",
+  db.users.filter((x) => x.role === "FACULTY" && x.isActive).sort((a, b) => a.name.localeCompare(b.name)).map((x) => ({ id: x.id, name: x.name, department: x.department })),
+]);
 const usersInScope = (actor) => db.users.filter((x) => actor.role === "ADMIN" || x.department === actor.department);
 route("GET", "/users", ["ADMIN", "HOD"], ({ actor, query }) => {
   const q = (query.search || "").toLowerCase();
@@ -755,7 +884,7 @@ route("GET", "/dashboard", ANY, ({ actor }) => {
   }
 
   if (actor.role === "FACULTY") {
-    const projects = db.projects.filter((p) => p.facultyId === actor.id);
+    const projects = db.projects.filter((p) => p.facultyId === actor.id && !["PROPOSED", "REJECTED"].includes(p.status));
     const pids = new Set(projects.map((p) => p.id));
     const stats = scopeStats(actor);
     return ["Dashboard retrieved", {
@@ -766,6 +895,7 @@ route("GET", "/dashboard", ANY, ({ actor }) => {
         guidedStudents: stats.students,
         pendingReviews: db.submissions.filter((s) => pids.has(s.projectId) && s.status === "PENDING").length,
         pendingAttendance: stats.pendingVerification,
+        pendingProposals: db.projects.filter((p) => p.facultyId === actor.id && p.status === "PROPOSED").length,
         attendancePercentage: stats.percentage,
       },
       attendanceStats: stats,
@@ -808,7 +938,7 @@ route("GET", "/dashboard", ANY, ({ actor }) => {
       admins: count("ADMIN"),
       pendingFacultyApprovals: pendingFaculty.length,
       unassignedStudents: active.filter((x) => x.role === "STUDENT" && !x.guideId).length,
-      totalProjects: db.projects.length,
+      totalProjects: db.projects.filter((p) => !["PROPOSED", "REJECTED"].includes(p.status)).length,
       attendancePercentage: stats.percentage,
     },
     pendingFaculty,

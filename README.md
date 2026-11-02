@@ -8,10 +8,10 @@ A role-based web portal for SRM students, faculty guides, HODs and administrator
 
 | Role | Can do |
 | --- | --- |
-| **Student** | Register with an `@srmist.edu.in` email and register number · add internship details · mark attendance once per weekday (remote or on-site, with a work summary) · see attendance %, present/pending/absent days · submit weekly reports with a link · resubmit when changes are requested · see feedback and notifications |
-| **Faculty (guide)** | Self-register, then wait for admin approval · verify or reject guided students' daily attendance (rejection needs a reason) · approve reports or request changes with feedback · create projects and teams (max 4 students) · export attendance CSV |
+| **Student** | Register with an `@srmist.edu.in` email and register number · add internship details · mark attendance once per weekday (remote or on-site, with a work summary) · see attendance %, present/pending/absent days · propose a project to a faculty member · submit weekly reports with a link (late reports are flagged) · resubmit when changes are requested · see feedback and notifications |
+| **Faculty (guide)** | Self-register, then wait for admin approval · verify or reject guided students' daily attendance (rejection needs a reason) · approve or reject project proposals (approval creates the student's team with them as leader) · create projects with domain, start date and deadline · move projects through Approved → In progress → Completed · create, rename and delete teams (max 4), pick a team leader · approve reports or request changes with feedback · export attendance CSV |
 | **HOD** | Read-only view of their department: attendance % per student, low-attendance flags (< 75%), weekly reports, users |
-| **Admin** | Approve faculty accounts · assign a faculty guide to each student · change roles · deactivate users · create HOD/admin accounts · see all departments |
+| **Admin** | Approve faculty accounts · assign a faculty guide to each student · reassign a project's faculty · change roles · deactivate users · create HOD/admin accounts · see all departments |
 
 ## How it works
 
@@ -97,7 +97,7 @@ npx prisma migrate deploy        # run once with DATABASE_URL set to the test DB
 npm test
 ```
 
-40 tests cover registration rules, login, expired/tampered tokens, role-based access, HOD department scoping, the attendance rules (duplicates, weekends, guide-only verification, percentage maths) and the report review loop. GitHub Actions runs them on every push, checks that the migrations match `schema.prisma`, and lints and builds the frontend.
+51 tests cover registration rules, login, expired/tampered tokens, role-based access, HOD department scoping, the attendance rules (duplicates, weekends, guide-only verification, percentage maths), project proposals and approval (including the auto-created team), project search/filter/sort/pagination, team leader rules, late-report flags and the report review loop. GitHub Actions runs them on every push, checks that the migrations match `schema.prisma`, and lints and builds the frontend.
 
 ## API
 
@@ -110,10 +110,15 @@ Interactive docs: **`/api/docs`** (Swagger UI). Main endpoints, all under `/api/
 | Internship | `GET/PUT /internships/me` |
 | Attendance | `POST /attendance` · `GET /attendance` · `GET /attendance/stats` · `GET /attendance/report?format=csv` · `GET /attendance/summary/:studentId` · `PATCH /attendance/:id/verify` |
 | Weekly reports | `GET/POST /submissions` · `GET/PATCH /submissions/:id` · `PATCH /submissions/:id/review` |
-| Projects & teams | `CRUD /projects` · `GET/POST /teams` · `POST /teams/assign` · `DELETE /teams/:id/members/:studentId` |
+| Projects | `GET /projects?search=&status=&domain=&sort=&order=&page=` · `POST /projects` · `POST /projects/proposals` · `GET/PATCH/DELETE /projects/:id` · `PATCH /projects/:id/review` · `PATCH /projects/:id/faculty` |
+| Teams | `GET/POST /teams` · `PATCH/DELETE /teams/:id` · `POST /teams/assign` · `DELETE /teams/:id/members/:studentId` · `GET /teams/available-students` |
 | Other | `GET /notifications` · `PATCH /notifications/:id/read` · `GET /dashboard` · `GET /health` |
 
 Responses always look like `{ success, message, data }`; errors like `{ success: false, message, errors }` with field-level validation messages.
+
+## Interactive demo build
+
+`npm run build:demo` in `frontend/` produces `dist-demo/index.html`: the same app as one self-contained file, with an in-browser stand-in for the API (`src/demo/mockServer.js`) and seeded demo data. It's useful for presentations when the real backend isn't running. Data stays in the browser, and there's a "Reset demo data" button.
 
 ## Deployment (free tiers)
 

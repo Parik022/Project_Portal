@@ -32,9 +32,29 @@ const STATUS = {
   REJECTED: ["danger", "Rejected"],
   APPROVED: ["success", "Approved"],
   CHANGES_REQUESTED: ["danger", "Changes requested"],
+  PROPOSED: ["warning", "Proposal"],
+  IN_PROGRESS: ["default", "In progress"],
+  COMPLETED: ["success", "Completed"],
   REMOTE: ["default", "Remote"],
   ONSITE: ["muted", "On-site"],
 };
 
 export const statusVariant = (status) => STATUS[status]?.[0] ?? "muted";
 export const statusLabel = (status) => STATUS[status]?.[1] ?? status;
+
+export const DOMAINS = ["Web Development", "AI / ML", "Data Science", "Mobile", "IoT", "Cybersecurity", "Cloud", "Other"];
+
+// Whole days from today (IST) to a DATE value; negative when it has passed.
+export const daysUntil = (value) => {
+  if (!value) return null;
+  const today = new Date(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date()) + "T00:00:00Z");
+  return Math.round((new Date(value) - today) / 86_400_000);
+};
+
+export const deadlineText = (value) => {
+  const days = daysUntil(value);
+  if (days === null) return "No deadline";
+  if (days < 0) return `${-days} days overdue`;
+  if (days === 0) return "Due today";
+  return `${days} days left`;
+};
