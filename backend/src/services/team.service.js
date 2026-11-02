@@ -106,6 +106,14 @@ const getAllTeams = async (user) =>
     orderBy: { name: "asc" },
   });
 
+// Students a faculty member can still add to a team.
+const getAvailableStudents = async () =>
+  prisma.user.findMany({
+    where: { role: "STUDENT", isActive: true, teamId: null },
+    select: { id: true, name: true, email: true, registerNo: true, department: true },
+    orderBy: { name: "asc" },
+  });
+
 const getStudentTeam = async (studentId) => {
   const student = await prisma.user.findUnique({
     where: { id: studentId },
@@ -138,5 +146,6 @@ module.exports = {
   getStudentTeam,
   removeStudentFromTeam,
   getAllTeams,
+  getAvailableStudents,
   MAX_TEAM_SIZE,
 };

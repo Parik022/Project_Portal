@@ -360,6 +360,9 @@ module.exports = {
       get: { tags: ["Teams"], ...secured, summary: "List teams in your scope", parameters: [q("projectId", { type: "string" })], responses: { 200: ok("Teams retrieved", []), ...common } },
       post: { tags: ["Teams"], ...secured, summary: "Faculty: create a team", requestBody: body("CreateTeam"), responses: { 201: ok("Team created", {}), 400: err("ValidationError"), ...common } },
     },
+    "/teams/available-students": {
+      get: { tags: ["Teams"], ...secured, summary: "Faculty: active students not yet on a team", responses: { 200: ok("Available students retrieved", []), ...common } },
+    },
     "/teams/assign": {
       post: { tags: ["Teams"], ...secured, summary: "Faculty: add a student to a team (max 4)", requestBody: body("AssignStudent"), responses: { 200: ok("Student assigned to team", {}), 400: err("ValidationError"), 409: err("Conflict"), ...common } },
     },

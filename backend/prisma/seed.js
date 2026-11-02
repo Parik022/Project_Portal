@@ -116,11 +116,11 @@ async function main() {
 
   await prisma.submission.createMany({
     data: [
-      { weekNumber: 1, title: "Week 1: Setup", description: "Set up the repo, database and auth endpoints.", status: "APPROVED", feedback: "Good start.", reviewedAt: addDays(start, 8), studentId: aarav.id, projectId: campus.id, link: "https://github.com/example/smart-campus" },
-      { weekNumber: 2, title: "Week 2: Attendance API", description: "Daily check-in endpoint with duplicate protection.", status: "CHANGES_REQUESTED", feedback: "Add tests for the duplicate check.", reviewedAt: addDays(start, 15), studentId: aarav.id, projectId: campus.id },
-      { weekNumber: 3, title: "Week 3: Dashboard", description: "Built the faculty dashboard with live stats.", status: "PENDING", studentId: aarav.id, projectId: campus.id },
-      { weekNumber: 1, title: "Week 1: UI wireframes", description: "Wireframes for student and faculty screens.", status: "APPROVED", reviewedAt: addDays(start, 8), studentId: diya.id, projectId: campus.id },
-      { weekNumber: 1, title: "Week 1: Data collection", description: "Collected placement data for three years.", status: "PENDING", studentId: rohan.id, projectId: placement.id },
+      { weekNumber: 1, title: "Setup", description: "Set up the repo, database and auth endpoints.", status: "APPROVED", feedback: "Good start.", reviewedAt: addDays(start, 8), studentId: aarav.id, projectId: campus.id, link: "https://github.com/example/smart-campus" },
+      { weekNumber: 2, title: "Attendance API", description: "Daily check-in endpoint with duplicate protection.", status: "CHANGES_REQUESTED", feedback: "Add tests for the duplicate check.", reviewedAt: addDays(start, 15), studentId: aarav.id, projectId: campus.id },
+      { weekNumber: 3, title: "Dashboard", description: "Built the faculty dashboard with live stats.", status: "PENDING", studentId: aarav.id, projectId: campus.id },
+      { weekNumber: 1, title: "UI wireframes", description: "Wireframes for student and faculty screens.", status: "APPROVED", reviewedAt: addDays(start, 8), studentId: diya.id, projectId: campus.id },
+      { weekNumber: 1, title: "Data collection", description: "Collected placement data for three years.", status: "PENDING", studentId: rohan.id, projectId: placement.id },
     ],
   });
 

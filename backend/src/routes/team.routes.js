@@ -13,6 +13,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get("/", asyncHandler(teamController.getTeams));
+router.get("/available-students", authorizeRoles("FACULTY", "ADMIN"), asyncHandler(teamController.getAvailableStudents));
 
 router.post(
   "/",
