@@ -169,13 +169,26 @@ module.exports = {
       },
       Project: {
         type: "object",
-        required: ["title", "description"],
+        required: ["title", "description", "domain"],
         properties: {
           title: { type: "string" },
           description: { type: "string" },
+          domain: { type: "string", example: "Web Development" },
+          startDate: { type: "string", format: "date", nullable: true },
+          deadline: { type: "string", format: "date", nullable: true },
           progressPercentage: { type: "integer", minimum: 0, maximum: 100 },
+          status: { type: "string", enum: ["APPROVED", "IN_PROGRESS", "COMPLETED"], description: "Update only" },
         },
       },
+      ProposeProject: {
+        allOf: [{ $ref: "#/components/schemas/Project" }, { type: "object", required: ["facultyId"], properties: { facultyId: { type: "string" } } }],
+      },
+      ReviewProject: {
+        type: "object",
+        required: ["decision"],
+        properties: { decision: { type: "string", enum: ["APPROVED", "REJECTED"] }, remark: { type: "string", description: "Required when rejecting" } },
+      },
+      UpdateTeam: { type: "object", properties: { name: { type: "string" }, leaderId: { type: "string", nullable: true } } },
       CreateTeam: { type: "object", required: ["name", "projectId"], properties: { name: { type: "string" }, projectId: { type: "string" } } },
       AssignStudent: {
         type: "object",
@@ -231,6 +244,9 @@ module.exports = {
     },
     "/auth/password": {
       patch: { tags: ["Auth"], ...secured, summary: "Change own password", requestBody: body("ChangePassword"), responses: { 200: ok("Password changed", { changed: true }), 400: err("ValidationError"), ...common } },
+    },
+    "/users/faculty": {
+      get: { tags: ["Users"], ...secured, summary: "Active faculty directory (for choosing a project faculty)", responses: { 200: ok("Faculty retrieved", []), ...common } },
     },
     "/users": {
       get: {
@@ -348,12 +364,42 @@ module.exports = {
       },
     },
     "/projects": {
-      get: { tags: ["Projects"], ...secured, summary: "List projects in your scope", responses: { 200: ok("Projects retrieved", []), ...common } },
+      get: {
+        tags: ["Projects"],
+        ...secured,
+        summary: "List projects in your scope with search, filters, sorting and pagination",
+        parameters: [
+          ...pageParams,
+          q("search", { type: "string" }, "Title or description"),
+          q("status", { type: "string", enum: ["PROPOSED", "APPROVED", "REJECTED", "IN_PROGRESS", "COMPLETED"] }),
+          q("domain", { type: "string" }),
+          q("facultyId", { type: "string" }, "Admin/HOD only"),
+          q("sort", { type: "string", enum: ["createdAt", "deadline", "title", "progressPercentage"] }),
+          q("order", { type: "string", enum: ["asc", "desc"] }),
+        ],
+        responses: { 200: ok("Projects retrieved", { items: [], pagination: {}, domains: [] }), 400: err("ValidationError"), ...common },
+      },
       post: { tags: ["Projects"], ...secured, summary: "Faculty: create a project", requestBody: body("Project"), responses: { 201: ok("Project created", {}), 400: err("ValidationError"), ...common } },
+    },
+    "/projects/proposals": {
+      post: { tags: ["Projects"], ...secured, summary: "Student: propose a project to a faculty member", requestBody: body("ProposeProject"), responses: { 201: ok("Proposal sent to faculty", {}), 400: err("ValidationError"), 409: err("Conflict"), ...common } },
+    },
+    "/projects/{id}/review": {
+      patch: {
+        tags: ["Projects"],
+        ...secured,
+        summary: "Faculty: approve or reject a proposal (approval creates the student's team with them as leader)",
+        parameters: [idParam()],
+        requestBody: body("ReviewProject", { decision: "APPROVED" }),
+        responses: { 200: ok("Proposal approved", {}), 400: err("ValidationError"), 404: err("NotFound"), ...common },
+      },
+    },
+    "/projects/{id}/faculty": {
+      patch: { tags: ["Projects"], ...secured, summary: "Admin: assign the project to another faculty member", parameters: [idParam()], requestBody: body("AssignGuide", { facultyId: "c..." }), responses: { 200: ok("Faculty assigned", {}), 400: err("ValidationError"), ...common } },
     },
     "/projects/{id}": {
       get: { tags: ["Projects"], ...secured, summary: "Get one project", parameters: [idParam()], responses: { 200: ok("Project retrieved", {}), 404: err("NotFound"), ...common } },
-      put: { tags: ["Projects"], ...secured, summary: "Faculty: update own project", parameters: [idParam()], requestBody: body("Project"), responses: { 200: ok("Project updated", {}), 404: err("NotFound"), ...common } },
+      patch: { tags: ["Projects"], ...secured, summary: "Faculty/admin: update details, status (APPROVED → IN_PROGRESS → COMPLETED) or progress", parameters: [idParam()], requestBody: body("Project"), responses: { 200: ok("Project updated", {}), 404: err("NotFound"), ...common } },
       delete: { tags: ["Projects"], ...secured, summary: "Faculty: delete own project", parameters: [idParam()], responses: { 200: ok("Project deleted", {}), 404: err("NotFound"), ...common } },
     },
     "/teams": {
@@ -365,6 +411,10 @@ module.exports = {
     },
     "/teams/assign": {
       post: { tags: ["Teams"], ...secured, summary: "Faculty: add a student to a team (max 4)", requestBody: body("AssignStudent"), responses: { 200: ok("Student assigned to team", {}), 400: err("ValidationError"), 409: err("Conflict"), ...common } },
+    },
+    "/teams/{id}": {
+      patch: { tags: ["Teams"], ...secured, summary: "Rename a team or set its leader (must be a member)", parameters: [idParam()], requestBody: body("UpdateTeam"), responses: { 200: ok("Team updated", {}), 400: err("ValidationError"), ...common } },
+      delete: { tags: ["Teams"], ...secured, summary: "Delete a team and free its members", parameters: [idParam()], responses: { 200: ok("Team deleted", {}), 404: err("NotFound"), ...common } },
     },
     "/teams/{id}/members/{studentId}": {
       delete: { tags: ["Teams"], ...secured, summary: "Faculty: remove a student from a team", parameters: [idParam(), idParam("studentId")], responses: { 200: ok("Student removed from team", {}), 404: err("NotFound"), ...common } },

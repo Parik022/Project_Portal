@@ -50,7 +50,7 @@ async function main() {
   const aarav = await user({ name: "Aarav Mehta", email: "student1@srmist.edu.in", role: "STUDENT", registerNo: "RA2411030010001", guideId: priya.id });
   const diya = await user({ name: "Diya Sharma", email: "student2@srmist.edu.in", role: "STUDENT", registerNo: "RA2411030010002", guideId: priya.id });
   const rohan = await user({ name: "Rohan Iyer", email: "student3@srmist.edu.in", role: "STUDENT", registerNo: "RA2411030010003", guideId: arun.id });
-  await user({ name: "Kavya Nair", email: "student4@srmist.edu.in", role: "STUDENT", registerNo: "RA2411030010004" });
+  const kavya = await user({ name: "Kavya Nair", email: "student4@srmist.edu.in", role: "STUDENT", registerNo: "RA2411030010004" });
 
   const today = todayIST();
   const start = addDays(today, -28);
@@ -96,6 +96,10 @@ async function main() {
     data: {
       title: "Smart Campus Attendance",
       description: "Geofenced attendance and analytics for SRM labs.",
+      domain: "Web Development",
+      status: "IN_PROGRESS",
+      startDate: start,
+      deadline: addDays(today, 42),
       facultyId: priya.id,
       progressPercentage: 45,
     },
@@ -104,23 +108,52 @@ async function main() {
     data: {
       title: "Placement Analytics",
       description: "Dashboard of placement trends across departments.",
+      domain: "Data Science",
+      status: "IN_PROGRESS",
+      startDate: start,
+      deadline: addDays(today, 10),
       facultyId: arun.id,
       progressPercentage: 20,
     },
   });
 
-  const alpha = await prisma.team.create({ data: { name: "Team Alpha", projectId: campus.id } });
-  const beta = await prisma.team.create({ data: { name: "Team Beta", projectId: placement.id } });
+  await prisma.project.create({
+    data: {
+      title: "AI Lab Equipment Tracker",
+      description: "Track lab equipment issue and return with QR codes and reminders.",
+      domain: "AI / ML",
+      status: "PROPOSED",
+      startDate: addDays(today, 3),
+      deadline: addDays(today, 70),
+      facultyId: priya.id,
+      proposedById: kavya.id,
+    },
+  });
+  await prisma.project.create({
+    data: {
+      title: "Hostel Mess Feedback App",
+      description: "Mobile-first feedback for the hostel mess with weekly summaries.",
+      domain: "Mobile",
+      status: "COMPLETED",
+      startDate: addDays(today, -120),
+      deadline: addDays(today, -30),
+      facultyId: arun.id,
+      progressPercentage: 100,
+    },
+  });
+
+  const alpha = await prisma.team.create({ data: { name: "Team Alpha", projectId: campus.id, leaderId: aarav.id } });
+  const beta = await prisma.team.create({ data: { name: "Team Beta", projectId: placement.id, leaderId: rohan.id } });
   await prisma.user.updateMany({ where: { id: { in: [aarav.id, diya.id] } }, data: { teamId: alpha.id } });
   await prisma.user.update({ where: { id: rohan.id }, data: { teamId: beta.id } });
 
   await prisma.submission.createMany({
     data: [
-      { weekNumber: 1, title: "Setup", description: "Set up the repo, database and auth endpoints.", status: "APPROVED", feedback: "Good start.", reviewedAt: addDays(start, 8), studentId: aarav.id, projectId: campus.id, link: "https://github.com/example/smart-campus" },
-      { weekNumber: 2, title: "Attendance API", description: "Daily check-in endpoint with duplicate protection.", status: "CHANGES_REQUESTED", feedback: "Add tests for the duplicate check.", reviewedAt: addDays(start, 15), studentId: aarav.id, projectId: campus.id },
-      { weekNumber: 3, title: "Dashboard", description: "Built the faculty dashboard with live stats.", status: "PENDING", studentId: aarav.id, projectId: campus.id },
-      { weekNumber: 1, title: "UI wireframes", description: "Wireframes for student and faculty screens.", status: "APPROVED", reviewedAt: addDays(start, 8), studentId: diya.id, projectId: campus.id },
-      { weekNumber: 1, title: "Data collection", description: "Collected placement data for three years.", status: "PENDING", studentId: rohan.id, projectId: placement.id },
+      { weekNumber: 1, title: "Setup", description: "Set up the repo, database and auth endpoints.", status: "APPROVED", feedback: "Good start.", reviewedAt: addDays(start, 8), studentId: aarav.id, projectId: campus.id, link: "https://github.com/example/smart-campus", createdAt: addDays(start, 5) },
+      { weekNumber: 2, title: "Attendance API", description: "Daily check-in endpoint with duplicate protection.", status: "CHANGES_REQUESTED", feedback: "Add tests for the duplicate check.", reviewedAt: addDays(start, 15), studentId: aarav.id, projectId: campus.id, createdAt: addDays(start, 12) },
+      { weekNumber: 3, title: "Dashboard", description: "Built the faculty dashboard with live stats.", status: "PENDING", studentId: aarav.id, projectId: campus.id, createdAt: addDays(start, 19) },
+      { weekNumber: 1, title: "UI wireframes", description: "Wireframes for student and faculty screens.", status: "APPROVED", reviewedAt: addDays(start, 8), studentId: diya.id, projectId: campus.id, createdAt: addDays(start, 6) },
+      { weekNumber: 1, title: "Data collection", description: "Collected placement data for three years.", status: "PENDING", studentId: rohan.id, projectId: placement.id, createdAt: addDays(start, 10) },
     ],
   });
 
@@ -128,6 +161,7 @@ async function main() {
     data: [
       { userId: admin.id, message: "Dr. Vikram Rao (faculty.pending@srmist.edu.in) registered as faculty and needs approval", type: "FACULTY_APPROVAL" },
       { userId: priya.id, message: "Aarav Mehta submitted the week 3 report", type: "SUBMISSION_CREATED" },
+      { userId: priya.id, message: 'Kavya Nair proposed a project: "AI Lab Equipment Tracker"', type: "PROJECT_PROPOSED" },
       { userId: aarav.id, message: "Changes requested on your week 2 report", type: "SUBMISSION_REVIEWED" },
     ],
   });
@@ -142,6 +176,7 @@ async function main() {
     { role: "FACULTY (awaiting approval)", email: "faculty.pending@srmist.edu.in" },
     { role: "STUDENT", email: aarav.email },
     { role: "STUDENT (low attendance)", email: rohan.email },
+    { role: "STUDENT (no team, has a proposal)", email: kavya.email },
   ]);
 }
 

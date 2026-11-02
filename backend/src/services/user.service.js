@@ -104,4 +104,12 @@ const assignGuide = async (studentId, guideId) => {
 // Soft delete: keeps attendance and submission history intact.
 const deactivateUser = async (actor, id) => updateUser(actor, id, { isActive: false });
 
-module.exports = { listUsers, getUser, createUser, updateUser, assignGuide, deactivateUser };
+// Public list of active faculty, used when a student proposes a project.
+const facultyDirectory = () =>
+  prisma.user.findMany({
+    where: { role: "FACULTY", isActive: true },
+    select: { id: true, name: true, department: true },
+    orderBy: { name: "asc" },
+  });
+
+module.exports = { facultyDirectory, listUsers, getUser, createUser, updateUser, assignGuide, deactivateUser };

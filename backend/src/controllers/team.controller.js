@@ -37,4 +37,12 @@ const getAvailableStudents = async (req, res) => {
   sendSuccess(res, await teamService.getAvailableStudents(), "Available students retrieved");
 };
 
-module.exports = { createTeam, getTeams, assignStudent, removeStudent, getAvailableStudents };
+const updateTeam = async (req, res) => {
+  sendSuccess(res, await teamService.updateTeam(req.user, req.params.id, req.body), "Team updated");
+};
+
+const deleteTeam = async (req, res) => {
+  sendSuccess(res, await teamService.deleteTeam(req.user, req.params.id), "Team deleted");
+};
+
+module.exports = { createTeam, getTeams, assignStudent, removeStudent, getAvailableStudents, updateTeam, deleteTeam };

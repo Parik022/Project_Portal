@@ -1,35 +1,30 @@
 const projectService = require("../services/project.service");
 const { sendSuccess } = require("../utils/apiResponse");
 
-const createProject = async (req, res) => {
-  const project = await projectService.createProject(req.user.id, req.body);
-  sendSuccess(res, project, "Project created", 201);
-};
-
 const getProjects = async (req, res) => {
-  const { role, id } = req.user;
-  const projects =
-    role === "FACULTY"
-      ? await projectService.getFacultyProjects(id)
-      : role === "STUDENT"
-        ? await projectService.getStudentProjects(id)
-        : await projectService.getAllProjects(req.user);
-  sendSuccess(res, projects, "Projects retrieved");
+  sendSuccess(res, await projectService.listProjects(req.user, req.query), "Projects retrieved");
 };
-
 const getProject = async (req, res) => {
-  const project = await projectService.getProjectById(req.params.id, req.user);
-  sendSuccess(res, project, "Project retrieved");
+  sendSuccess(res, await projectService.getProjectById(req.params.id, req.user), "Project retrieved");
 };
-
+const createProject = async (req, res) => {
+  sendSuccess(res, await projectService.createProject(req.user.id, req.body), "Project created", 201);
+};
+const proposeProject = async (req, res) => {
+  sendSuccess(res, await projectService.proposeProject(req.user, req.body), "Proposal sent to faculty", 201);
+};
+const reviewProposal = async (req, res) => {
+  const project = await projectService.reviewProposal(req.params.id, req.user, req.body);
+  sendSuccess(res, project, project.status === "APPROVED" ? "Proposal approved" : "Proposal rejected");
+};
 const updateProject = async (req, res) => {
-  const project = await projectService.updateProject(req.params.id, req.user.id, req.body);
-  sendSuccess(res, project, "Project updated");
+  sendSuccess(res, await projectService.updateProject(req.params.id, req.user, req.body), "Project updated");
 };
-
+const assignFaculty = async (req, res) => {
+  sendSuccess(res, await projectService.assignFaculty(req.params.id, req.body.facultyId), "Faculty assigned");
+};
 const deleteProject = async (req, res) => {
-  const result = await projectService.deleteProject(req.params.id, req.user.id);
-  sendSuccess(res, result, "Project deleted");
+  sendSuccess(res, await projectService.deleteProject(req.params.id, req.user), "Project deleted");
 };
 
-module.exports = { createProject, getProjects, getProject, updateProject, deleteProject };
+module.exports = { getProjects, getProject, createProject, proposeProject, reviewProposal, updateProject, assignFaculty, deleteProject };

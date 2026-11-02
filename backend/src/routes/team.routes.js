@@ -5,7 +5,8 @@ const teamController = require("../controllers/team.controller");
 const { authenticate } = require("../middleware/auth.middleware");
 const { authorizeRoles } = require("../middleware/role.middleware");
 const { validate } = require("../middleware/validate.middleware");
-const { createTeamSchema, assignStudentSchema } = require("../validators/team.validator");
+const { createTeamSchema, assignStudentSchema, updateTeamSchema } = require("../validators/team.validator");
+const { idParamSchema } = require("../validators/common.validator");
 const { asyncHandler } = require("../utils/asyncHandler");
 
 const router = express.Router();
@@ -28,6 +29,16 @@ router.post(
   validate(assignStudentSchema),
   asyncHandler(teamController.assignStudent)
 );
+
+router.patch(
+  "/:id",
+  authorizeRoles("FACULTY", "ADMIN"),
+  validate(idParamSchema, "params"),
+  validate(updateTeamSchema),
+  asyncHandler(teamController.updateTeam)
+);
+
+router.delete("/:id", authorizeRoles("FACULTY", "ADMIN"), validate(idParamSchema, "params"), asyncHandler(teamController.deleteTeam));
 
 router.delete(
   "/:id/members/:studentId",

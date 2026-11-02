@@ -1,5 +1,6 @@
 const { prisma } = require("../config/database");
 const { AppError } = require("../utils/AppError");
+const { notify } = require("./notification.service");
 
 const MAX_TEAM_SIZE = 4;
 
@@ -14,13 +15,17 @@ const assertFacultyOwnsProject = async (projectId, facultyId) => {
 };
 
 const createTeam = async (facultyId, { name, projectId }) => {
-  await assertFacultyOwnsProject(projectId, facultyId);
+  const project = await assertFacultyOwnsProject(projectId, facultyId);
+  if (["PROPOSED", "REJECTED"].includes(project.status)) {
+    throw new AppError("Teams can only be created for approved projects", 400);
+  }
 
   return prisma.team.create({
     data: { name, projectId },
     include: {
       project: { select: { id: true, title: true } },
       members: { select: { id: true, name: true, email: true } },
+      leader: { select: { id: true, name: true } },
     },
   });
 };
@@ -31,6 +36,7 @@ const getTeamsByFaculty = async (facultyId) => {
     include: {
       project: { select: { id: true, title: true } },
       members: { select: { id: true, name: true, email: true } },
+      leader: { select: { id: true, name: true } },
     },
     orderBy: { name: "asc" },
   });
@@ -43,6 +49,7 @@ const getTeamsByProject = async (projectId, facultyId) => {
     where: { projectId },
     include: {
       members: { select: { id: true, name: true, email: true } },
+      leader: { select: { id: true, name: true } },
     },
   });
 };
@@ -92,8 +99,47 @@ const removeStudentFromTeam = async (facultyId, teamId, studentId) => {
   const student = await prisma.user.findFirst({ where: { id: studentId, teamId } });
   if (!student) throw new AppError("Student is not in this team", 404);
 
-  await prisma.user.update({ where: { id: studentId }, data: { teamId: null } });
+  // Removing the leader also clears the leader slot.
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: studentId }, data: { teamId: null } }),
+    ...(team.leaderId === studentId ? [prisma.team.update({ where: { id: teamId }, data: { leaderId: null } })] : []),
+  ]);
   return { removed: true };
+};
+
+const findManageableTeam = async (user, teamId) => {
+  const team = await prisma.team.findUnique({ where: { id: teamId } });
+  if (!team) throw new AppError("Team not found", 404);
+  if (user.role === "FACULTY") await assertFacultyOwnsProject(team.projectId, user.id);
+  return team;
+};
+
+const updateTeam = async (user, teamId, { name, leaderId }) => {
+  await findManageableTeam(user, teamId);
+  if (leaderId) {
+    const member = await prisma.user.findFirst({ where: { id: leaderId, teamId } });
+    if (!member) throw new AppError("The leader must be a member of this team", 400);
+  }
+  const team = await prisma.team.update({
+    where: { id: teamId },
+    data: { ...(name ? { name } : {}), ...(leaderId !== undefined ? { leaderId } : {}) },
+    include: {
+      project: { select: { id: true, title: true } },
+      members: { select: { id: true, name: true, email: true } },
+      leader: { select: { id: true, name: true } },
+    },
+  });
+  if (leaderId) await notify(leaderId, `You are now the leader of ${team.name}`, "TEAM_LEADER");
+  return team;
+};
+
+const deleteTeam = async (user, teamId) => {
+  await findManageableTeam(user, teamId);
+  await prisma.$transaction([
+    prisma.user.updateMany({ where: { teamId }, data: { teamId: null } }),
+    prisma.team.delete({ where: { id: teamId } }),
+  ]);
+  return { deleted: true };
 };
 
 const getAllTeams = async (user) =>
@@ -102,6 +148,7 @@ const getAllTeams = async (user) =>
     include: {
       project: { select: { id: true, title: true } },
       members: { select: { id: true, name: true, email: true } },
+      leader: { select: { id: true, name: true } },
     },
     orderBy: { name: "asc" },
   });
@@ -126,6 +173,7 @@ const getStudentTeam = async (studentId) => {
             },
           },
           members: { select: { id: true, name: true, email: true } },
+      leader: { select: { id: true, name: true } },
         },
       },
     },
@@ -147,5 +195,7 @@ module.exports = {
   removeStudentFromTeam,
   getAllTeams,
   getAvailableStudents,
+  updateTeam,
+  deleteTeam,
   MAX_TEAM_SIZE,
 };
