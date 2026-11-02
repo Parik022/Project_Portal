@@ -2,30 +2,23 @@ const submissionService = require("../services/submission.service");
 const { sendSuccess } = require("../utils/apiResponse");
 
 const createSubmission = async (req, res) => {
-  const submission = await submissionService.createSubmission(req.user.id, req.body);
-  sendSuccess(res, submission, "Submission created and attendance marked", 201);
+  sendSuccess(res, await submissionService.createSubmission(req.user, req.body), "Report submitted", 201);
 };
 
 const getSubmissions = async (req, res) => {
-  const submissions =
-    req.user.role === "FACULTY"
-      ? await submissionService.getFacultySubmissions(req.user.id)
-      : await submissionService.getStudentSubmissions(req.user.id);
-  sendSuccess(res, submissions, "Submissions retrieved");
+  sendSuccess(res, await submissionService.listSubmissions(req.user), "Submissions retrieved");
 };
 
 const getSubmission = async (req, res) => {
-  const submission = await submissionService.getSubmissionById(req.params.id, req.user);
-  sendSuccess(res, submission, "Submission retrieved");
+  sendSuccess(res, await submissionService.getSubmissionById(req.params.id, req.user), "Submission retrieved");
+};
+
+const updateSubmission = async (req, res) => {
+  sendSuccess(res, await submissionService.updateSubmission(req.params.id, req.user, req.body), "Report updated");
 };
 
 const reviewSubmission = async (req, res) => {
-  const submission = await submissionService.reviewSubmission(
-    req.params.id,
-    req.user.id,
-    req.body
-  );
-  sendSuccess(res, submission, "Submission reviewed");
+  sendSuccess(res, await submissionService.reviewSubmission(req.params.id, req.user, req.body), "Report reviewed");
 };
 
-module.exports = { createSubmission, getSubmissions, getSubmission, reviewSubmission };
+module.exports = { createSubmission, getSubmissions, getSubmission, updateSubmission, reviewSubmission };

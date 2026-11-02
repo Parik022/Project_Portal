@@ -1,151 +1,115 @@
 const { prisma } = require("../config/database");
 const { AppError } = require("../utils/AppError");
+const { notify } = require("./notification.service");
 
-const getStudentProjectId = async (studentId) => {
+const include = {
+  student: { select: { id: true, name: true, email: true, registerNo: true } },
+  project: { select: { id: true, title: true, facultyId: true } },
+};
+
+// Which submissions a user may see.
+const scopeFor = (user) => {
+  switch (user.role) {
+    case "STUDENT":
+      return { studentId: user.id };
+    case "FACULTY":
+      return { project: { facultyId: user.id } };
+    case "HOD":
+      return { student: { department: user.department } };
+    case "ADMIN":
+      return {};
+    default:
+      return { id: "__none__" };
+  }
+};
+
+const getStudentProject = async (studentId) => {
   const student = await prisma.user.findUnique({
     where: { id: studentId },
-    include: { team: true },
+    include: { team: { include: { project: true } } },
   });
-
   if (!student?.team) {
     throw new AppError("You must be assigned to a team before submitting", 400);
   }
-
-  return student.team.projectId;
+  return student.team.project;
 };
 
-const createSubmission = async (studentId, data) => {
-  const projectId = await getStudentProjectId(studentId);
+const createSubmission = async (student, data) => {
+  const project = await getStudentProject(student.id);
 
-  const existingSubmission = await prisma.submission.findUnique({
-    where: {
-      studentId_weekNumber: { studentId, weekNumber: data.weekNumber },
-    },
+  const existing = await prisma.submission.findUnique({
+    where: { studentId_weekNumber: { studentId: student.id, weekNumber: data.weekNumber } },
   });
-
-  if (existingSubmission) {
-    throw new AppError("Submission for this week already exists", 409);
+  if (existing) {
+    throw new AppError("You already submitted a report for this week", 409);
   }
 
-  const existingAttendance = await prisma.attendance.findUnique({
-    where: {
-      studentId_weekNumber: { studentId, weekNumber: data.weekNumber },
-    },
+  const submission = await prisma.submission.create({
+    data: { ...data, studentId: student.id, projectId: project.id },
+    include,
   });
 
-  if (existingAttendance) {
-    throw new AppError("Attendance for this week already recorded", 409);
-  }
-
-  return prisma.$transaction(async (tx) => {
-    const submission = await tx.submission.create({
-      data: {
-        weekNumber: data.weekNumber,
-        title: data.title,
-        description: data.description,
-        status: data.status || "PENDING",
-        studentId,
-        projectId,
-      },
-      include: {
-        student: { select: { id: true, name: true, email: true } },
-        project: { select: { id: true, title: true } },
-      },
-    });
-
-    await tx.attendance.create({
-      data: {
-        studentId,
-        submissionId: submission.id,
-        weekNumber: data.weekNumber,
-        status: "PRESENT",
-      },
-    });
-
-    return submission;
-  });
-};
-
-const getFacultySubmissions = async (facultyId) => {
-  return prisma.submission.findMany({
-    where: { project: { facultyId } },
-    include: {
-      student: { select: { id: true, name: true, email: true } },
-      project: { select: { id: true, title: true } },
-      attendance: true,
-    },
-    orderBy: { createdAt: "desc" },
-  });
-};
-
-const getStudentSubmissions = async (studentId) => {
-  return prisma.submission.findMany({
-    where: { studentId },
-    include: {
-      project: { select: { id: true, title: true } },
-      attendance: true,
-    },
-    orderBy: { weekNumber: "desc" },
-  });
-};
-
-const reviewSubmission = async (submissionId, facultyId, { status }) => {
-  const submission = await prisma.submission.findFirst({
-    where: {
-      id: submissionId,
-      project: { facultyId },
-    },
-  });
-
-  if (!submission) {
-    throw new AppError("Submission not found or access denied", 404);
-  }
-
-  return prisma.submission.update({
-    where: { id: submissionId },
-    data: { status },
-    include: {
-      student: { select: { id: true, name: true, email: true } },
-      project: { select: { id: true, title: true } },
-      attendance: true,
-    },
-  });
-};
-
-const getSubmissionById = async (submissionId, user) => {
-  const submission = await prisma.submission.findUnique({
-    where: { id: submissionId },
-    include: {
-      student: { select: { id: true, name: true, email: true } },
-      project: { select: { id: true, title: true } },
-      attendance: true,
-    },
-  });
-
-  if (!submission) {
-    throw new AppError("Submission not found", 404);
-  }
-
-  if (user.role === "STUDENT" && submission.studentId !== user.id) {
-    throw new AppError("Access denied", 403);
-  }
-
-  if (user.role === "FACULTY") {
-    const project = await prisma.project.findFirst({
-      where: { id: submission.projectId, facultyId: user.id },
-    });
-    if (!project) {
-      throw new AppError("Access denied", 403);
-    }
-  }
-
+  await notify(project.facultyId, `${student.name} submitted the week ${data.weekNumber} report`, "SUBMISSION_CREATED");
   return submission;
 };
 
-module.exports = {
-  createSubmission,
-  getFacultySubmissions,
-  getStudentSubmissions,
-  reviewSubmission,
-  getSubmissionById,
+const listSubmissions = async (user) =>
+  prisma.submission.findMany({
+    where: scopeFor(user),
+    include,
+    orderBy: user.role === "STUDENT" ? { weekNumber: "desc" } : { createdAt: "desc" },
+  });
+
+const getSubmissionById = async (id, user) => {
+  const submission = await prisma.submission.findFirst({ where: { id, ...scopeFor(user) }, include });
+  if (!submission) throw new AppError("Submission not found", 404);
+  return submission;
 };
+
+// Students can edit a report until it is approved; editing sends it back for review.
+const updateSubmission = async (id, student, data) => {
+  const submission = await prisma.submission.findFirst({ where: { id, studentId: student.id }, include });
+  if (!submission) throw new AppError("Submission not found", 404);
+  if (submission.status === "APPROVED") {
+    throw new AppError("Approved reports can no longer be edited", 400);
+  }
+
+  const updated = await prisma.submission.update({
+    where: { id },
+    data: { ...data, status: "PENDING" },
+    include,
+  });
+
+  if (submission.status === "CHANGES_REQUESTED") {
+    await notify(
+      submission.project.facultyId,
+      `${student.name} resubmitted the week ${submission.weekNumber} report`,
+      "SUBMISSION_RESUBMITTED"
+    );
+  }
+  return updated;
+};
+
+const reviewSubmission = async (id, reviewer, { status, feedback }) => {
+  const submission = await prisma.submission.findFirst({
+    where: { id, ...(reviewer.role === "FACULTY" ? { project: { facultyId: reviewer.id } } : {}) },
+  });
+  if (!submission) throw new AppError("Submission not found or access denied", 404);
+
+  const updated = await prisma.submission.update({
+    where: { id },
+    data: { status, feedback: feedback ?? null, reviewedAt: new Date() },
+    include,
+  });
+
+  await notify(
+    submission.studentId,
+    status === "APPROVED"
+      ? `Your week ${submission.weekNumber} report was approved`
+      : `Changes requested on your week ${submission.weekNumber} report`,
+    "SUBMISSION_REVIEWED"
+  );
+  return updated;
+};
+
+module.exports = { createSubmission, listSubmissions, getSubmissionById, updateSubmission, reviewSubmission };

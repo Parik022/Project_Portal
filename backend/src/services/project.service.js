@@ -33,6 +33,23 @@ const getFacultyProjects = async (facultyId) => {
   });
 };
 
+// HODs see projects run by faculty in their department; admins see everything.
+const getAllProjects = async (user) =>
+  prisma.project.findMany({
+    where: user.role === "HOD" ? { faculty: { department: user.department } } : {},
+    include: {
+      faculty: { select: { id: true, name: true, email: true } },
+      teams: {
+        include: {
+          members: { select: { id: true, name: true, email: true } },
+          _count: { select: { members: true } },
+        },
+      },
+      _count: { select: { submissions: true, teams: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
 const getStudentProjects = async (studentId) => {
   const student = await prisma.user.findUnique({
     where: { id: studentId },
@@ -81,6 +98,13 @@ const getProjectById = async (projectId, user) => {
 
   if (user.role === "FACULTY" && project.facultyId !== user.id) {
     throw new AppError("You do not have access to this project", 403);
+  }
+
+  if (user.role === "HOD") {
+    const faculty = await prisma.user.findUnique({ where: { id: project.facultyId } });
+    if (faculty?.department !== user.department) {
+      throw new AppError("You do not have access to this project", 403);
+    }
   }
 
   if (user.role === "STUDENT") {
@@ -132,6 +156,7 @@ module.exports = {
   createProject,
   getFacultyProjects,
   getStudentProjects,
+  getAllProjects,
   getProjectById,
   updateProject,
   deleteProject,
