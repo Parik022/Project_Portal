@@ -7,10 +7,13 @@ const createProject = async (req, res) => {
 };
 
 const getProjects = async (req, res) => {
+  const { role, id } = req.user;
   const projects =
-    req.user.role === "FACULTY"
-      ? await projectService.getFacultyProjects(req.user.id)
-      : await projectService.getStudentProjects(req.user.id);
+    role === "FACULTY"
+      ? await projectService.getFacultyProjects(id)
+      : role === "STUDENT"
+        ? await projectService.getStudentProjects(id)
+        : await projectService.getAllProjects(req.user);
   sendSuccess(res, projects, "Projects retrieved");
 };
 

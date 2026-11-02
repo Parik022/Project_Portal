@@ -16,8 +16,11 @@ const authenticate = asyncHandler(async (req, res, next) => {
   let decoded;
   try {
     decoded = jwt.verify(token, env.JWT_SECRET);
-  } catch {
-    throw new AppError("Invalid or expired token", 401);
+  } catch (error) {
+    throw new AppError(
+      error.name === "TokenExpiredError" ? "Session expired, please log in again" : "Invalid token",
+      401
+    );
   }
 
   const user = await prisma.user.findUnique({
@@ -27,6 +30,9 @@ const authenticate = asyncHandler(async (req, res, next) => {
       name: true,
       email: true,
       role: true,
+      department: true,
+      isActive: true,
+      guideId: true,
       teamId: true,
       createdAt: true,
       updatedAt: true,
@@ -35,6 +41,11 @@ const authenticate = asyncHandler(async (req, res, next) => {
 
   if (!user) {
     throw new AppError("User not found", 401);
+  }
+
+  // A token issued before deactivation must stop working immediately.
+  if (!user.isActive) {
+    throw new AppError("Your account is inactive", 403);
   }
 
   req.user = user;

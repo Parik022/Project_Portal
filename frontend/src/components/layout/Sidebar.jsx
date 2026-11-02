@@ -1,30 +1,15 @@
 import { NavLink } from "react-router-dom";
-import {
-  LayoutDashboard,
-  FolderKanban,
-  Users,
-  FileText,
-  CalendarCheck,
-  Settings,
-  LogOut,
-} from "lucide-react";
+import { LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/context/AuthContext";
-
-const navItems = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/projects", label: "Projects", icon: FolderKanban },
-  { to: "/teams", label: "Teams", icon: Users },
-  { to: "/submissions", label: "Weekly Reports", icon: FileText },
-  { to: "/attendance", label: "Attendance", icon: CalendarCheck },
-  { to: "/settings", label: "Settings", icon: Settings },
-];
+import { ROLE_LABELS } from "@/lib/format";
+import { navFor } from "./navItems";
 
 export function Sidebar() {
   const { user, logout } = useAuth();
 
   return (
-    <aside className="hidden h-screen w-[17.5rem] shrink-0 flex-col border-r border-border bg-card shadow-[2px_0_24px_rgba(1,70,148,0.04)] md:flex">
+    <aside className="sticky top-0 hidden h-screen w-[17.5rem] shrink-0 flex-col border-r border-border bg-card shadow-[2px_0_24px_rgba(1,70,148,0.04)] md:flex">
       <div className="border-b border-border/80 bg-white px-5 py-5">
         <img
           src="/srm-logo-full.png"
@@ -43,7 +28,7 @@ export function Sidebar() {
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-sidebar-muted/90">
           Menu
         </p>
-        {navItems.map(({ to, label, icon: Icon }) => (
+        {navFor(user?.role).map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -79,7 +64,7 @@ export function Sidebar() {
           <p className="truncate text-sm font-medium text-white">{user?.name}</p>
           <p className="mt-0.5 truncate text-xs text-sidebar-muted">{user?.email}</p>
           <span className="mt-2.5 inline-flex rounded-md bg-gold/95 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-            {user?.role}
+            {ROLE_LABELS[user?.role]}{user?.department ? ` · ${user.department}` : ""}
           </span>
         </div>
         <button

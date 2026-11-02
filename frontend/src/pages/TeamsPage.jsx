@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { UserPlus } from "lucide-react";
+import { useState } from "react";
+import { useApi } from "@/lib/useApi";
+import { UserPlus, X, Users } from "lucide-react";
 import api from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
 import { PageHeader } from "@/components/PageHeader";
@@ -7,28 +8,26 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select } from "@/components/ui/select";
+import { Alert } from "@/components/ui/alert";
+import { EmptyState } from "@/components/ui/empty-state";
 
 export default function TeamsPage() {
   const { user } = useAuth();
   const isFaculty = user?.role === "FACULTY";
-  const [teams, setTeams] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const teamsQuery = useApi("/teams");
+  const projectsQuery = useApi("/projects", { skip: !isFaculty });
+  const studentsQuery = useApi("/teams/available-students", { skip: !isFaculty });
+  const teams = Array.isArray(teamsQuery.data) ? teamsQuery.data : [teamsQuery.data].filter(Boolean);
+  const projects = projectsQuery.data || [];
+  const students = studentsQuery.data || [];
   const [teamForm, setTeamForm] = useState({ name: "", projectId: "" });
   const [assignForm, setAssignForm] = useState({ studentId: "", teamId: "" });
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
-  const loadTeams = async () => {
-    const res = await api.get("/teams");
-    const data = res.data;
-    setTeams(Array.isArray(data) ? data : [data].filter(Boolean));
-  };
-
-  useEffect(() => {
-    loadTeams().catch(console.error);
-    if (isFaculty) {
-      api.get("/projects").then((r) => setProjects(r.data));
-    }
-  }, [isFaculty]);
+  const loadTeams = teamsQuery.reload;
+  const loadStudents = studentsQuery.reload;
 
   const handleCreateTeam = async (e) => {
     e.preventDefault();
@@ -48,7 +47,20 @@ export default function TeamsPage() {
     try {
       await api.post("/teams/assign", assignForm);
       setAssignForm({ studentId: "", teamId: "" });
+      setNotice("Student added to the team.");
       loadTeams();
+      loadStudents();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const removeMember = async (teamId, studentId) => {
+    setError("");
+    try {
+      await api.delete(`/teams/${teamId}/members/${studentId}`);
+      loadTeams();
+      loadStudents();
     } catch (err) {
       setError(err.message);
     }
@@ -59,11 +71,16 @@ export default function TeamsPage() {
       <PageHeader
         title="Teams"
         description={
-          isFaculty ? "Create teams and assign students" : "Your team and teammates"
+          isFaculty
+            ? "Create teams (up to 4 students each) and add students to them"
+            : user?.role === "STUDENT"
+              ? "Your team and teammates"
+              : "Teams across your scope (read-only)"
         }
       />
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      <Alert tone="error" className="mb-4">{error}</Alert>
+      <Alert tone="success" className="mb-4">{notice}</Alert>
 
       {isFaculty && (
         <div className="mb-8 grid gap-6 lg:grid-cols-2">
@@ -112,15 +129,19 @@ export default function TeamsPage() {
             <CardContent>
               <form onSubmit={handleAssign} className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Student ID</Label>
-                  <Input
-                    placeholder="Paste student user ID"
+                  <Label>Student</Label>
+                  <Select
                     value={assignForm.studentId}
-                    onChange={(e) =>
-                      setAssignForm({ ...assignForm, studentId: e.target.value })
-                    }
+                    onChange={(e) => setAssignForm({ ...assignForm, studentId: e.target.value })}
                     required
-                  />
+                  >
+                    <option value="">{students.length ? "Select student" : "No unassigned students"}</option>
+                    {students.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        {st.name} · {st.registerNo}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
                 <div className="space-y-2">
                   <Label>Team</Label>
@@ -147,6 +168,9 @@ export default function TeamsPage() {
         </div>
       )}
 
+      {teams.length === 0 && (
+        <EmptyState icon={Users} title="No teams yet" description={isFaculty ? "Create a team for one of your projects." : "You'll see your team once faculty adds you."} />
+      )}
       <div className="grid gap-4 md:grid-cols-2">
         {teams.map((t) => (
           <Card key={t.id} hover>
@@ -163,9 +187,20 @@ export default function TeamsPage() {
                   <li className="text-sm text-muted">No members yet</li>
                 )}
                 {t.members?.map((m) => (
-                  <li key={m.id} className="text-sm">
-                    {m.name}{" "}
-                    <span className="text-muted text-xs">({m.id.slice(0, 8)}…)</span>
+                  <li key={m.id} className="flex items-center justify-between text-sm">
+                    <span>
+                      {m.name} <span className="text-xs text-muted">{m.email}</span>
+                    </span>
+                    {isFaculty && (
+                      <button
+                        type="button"
+                        onClick={() => removeMember(t.id, m.id)}
+                        className="rounded p-1 text-muted hover:bg-red-50 hover:text-red-600"
+                        aria-label={`Remove ${m.name}`}
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

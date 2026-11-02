@@ -1,99 +1,161 @@
 const { prisma } = require("../config/database");
-const {
-  getFacultyAttendanceStats,
-  getStudentAttendanceStats,
-} = require("./attendance.service");
+const attendanceService = require("./attendance.service");
 
-const getFacultyDashboard = async (facultyId) => {
-  const [totalProjects, totalTeams, totalStudents, totalSubmissions, attendance, recentSubmissions, projects] =
+const recentSubmissionInclude = {
+  student: { select: { id: true, name: true } },
+  project: { select: { id: true, title: true } },
+};
+
+const getStudentDashboard = async (student) => {
+  const [profile, submissionCount, pendingReviews, attendance, recentSubmissions] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: student.id },
+      include: {
+        guide: { select: { id: true, name: true, email: true } },
+        team: {
+          include: {
+            project: { include: { faculty: { select: { id: true, name: true, email: true } } } },
+            members: { select: { id: true, name: true, email: true } },
+          },
+        },
+      },
+    }),
+    prisma.submission.count({ where: { studentId: student.id } }),
+    prisma.submission.count({ where: { studentId: student.id, status: "PENDING" } }),
+    attendanceService.getStudentSummary(student, student.id),
+    prisma.submission.findMany({ where: { studentId: student.id }, take: 5, orderBy: { weekNumber: "desc" } }),
+  ]);
+
+  return {
+    role: "STUDENT",
+    assignedProject: profile?.team?.project || null,
+    team: profile?.team ? { id: profile.team.id, name: profile.team.name, members: profile.team.members } : null,
+    guide: profile?.guide || null,
+    stats: {
+      submissionCount,
+      pendingReviews,
+      attendancePercentage: attendance.percentage,
+    },
+    attendance,
+    recentSubmissions,
+  };
+};
+
+const getFacultyDashboard = async (faculty) => {
+  const facultyId = faculty.id;
+  const [totalProjects, totalTeams, pendingReviews, recentSubmissions, projects, students, attendanceStats] =
     await Promise.all([
       prisma.project.count({ where: { facultyId } }),
       prisma.team.count({ where: { project: { facultyId } } }),
-      prisma.user.count({
-        where: { role: "STUDENT", team: { project: { facultyId } } },
-      }),
-      prisma.submission.count({ where: { project: { facultyId } } }),
-      getFacultyAttendanceStats(facultyId),
+      prisma.submission.count({ where: { project: { facultyId }, status: "PENDING" } }),
       prisma.submission.findMany({
         where: { project: { facultyId } },
         take: 5,
         orderBy: { createdAt: "desc" },
-        include: {
-          student: { select: { id: true, name: true } },
-          project: { select: { id: true, title: true } },
-        },
+        include: recentSubmissionInclude,
       }),
       prisma.project.findMany({
         where: { facultyId },
-        select: {
-          id: true,
-          title: true,
-          progressPercentage: true,
-          _count: { select: { teams: true, submissions: true } },
-        },
+        select: { id: true, title: true, progressPercentage: true, _count: { select: { teams: true, submissions: true } } },
         orderBy: { createdAt: "desc" },
         take: 5,
       }),
+      attendanceService.getScopeSummaries(faculty),
+      attendanceService.getScopeStats(faculty),
     ]);
 
   return {
+    role: "FACULTY",
     stats: {
       totalProjects,
       totalTeams,
-      totalStudents,
-      totalSubmissions,
-      attendancePercentage: attendance.percentage,
+      guidedStudents: attendanceStats.students,
+      pendingReviews,
+      pendingAttendance: attendanceStats.pendingVerification,
+      attendancePercentage: attendanceStats.percentage,
     },
+    attendanceStats,
+    students,
     recentSubmissions,
     projectProgress: projects,
-    attendanceOverview: attendance,
   };
 };
 
-const getStudentDashboard = async (studentId) => {
-  const student = await prisma.user.findUnique({
-    where: { id: studentId },
-    include: {
-      team: {
-        include: {
-          project: {
-            include: {
-              faculty: { select: { id: true, name: true, email: true } },
-            },
-          },
-          members: { select: { id: true, name: true, email: true } },
-        },
-      },
-    },
-  });
-
-  const [submissionCount, attendance, recentSubmissions] = await Promise.all([
-    prisma.submission.count({ where: { studentId } }),
-    getStudentAttendanceStats(studentId),
+const getHodDashboard = async (hod) => {
+  const department = hod.department;
+  const [facultyCount, pendingReviews, recentSubmissions, students, attendanceStats] = await Promise.all([
+    prisma.user.count({ where: { role: "FACULTY", department, isActive: true } }),
+    prisma.submission.count({ where: { status: "PENDING", student: { department } } }),
     prisma.submission.findMany({
-      where: { studentId },
+      where: { student: { department } },
       take: 5,
-      orderBy: { weekNumber: "desc" },
-      include: { attendance: true },
+      orderBy: { createdAt: "desc" },
+      include: recentSubmissionInclude,
     }),
+    attendanceService.getScopeSummaries(hod),
+    attendanceService.getScopeStats(hod),
   ]);
 
   return {
-    assignedProject: student?.team?.project || null,
-    team: student?.team
-      ? {
-          id: student.team.id,
-          name: student.team.name,
-          members: student.team.members,
-        }
-      : null,
+    role: "HOD",
+    department,
     stats: {
-      submissionCount,
-      attendancePercentage: attendance.percentage,
+      students: attendanceStats.students,
+      facultyCount,
+      attendancePercentage: attendanceStats.percentage,
+      lowAttendance: attendanceStats.lowAttendance,
+      checkedInToday: attendanceStats.checkedInToday,
+      pendingReviews,
     },
+    attendanceStats,
+    students,
     recentSubmissions,
-    attendanceOverview: attendance,
   };
 };
 
-module.exports = { getFacultyDashboard, getStudentDashboard };
+const getAdminDashboard = async (admin) => {
+  const [byRole, pendingFaculty, unassignedStudents, totalProjects, attendanceStats] = await Promise.all([
+    prisma.user.groupBy({ by: ["role"], where: { isActive: true }, _count: { _all: true } }),
+    prisma.user.findMany({
+      where: { role: "FACULTY", isActive: false },
+      select: { id: true, name: true, email: true, department: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    }),
+    prisma.user.count({ where: { role: "STUDENT", isActive: true, guideId: null } }),
+    prisma.project.count(),
+    attendanceService.getScopeStats(admin),
+  ]);
+
+  const users = Object.fromEntries(byRole.map((row) => [row.role, row._count._all]));
+
+  return {
+    role: "ADMIN",
+    stats: {
+      students: users.STUDENT || 0,
+      faculty: users.FACULTY || 0,
+      hods: users.HOD || 0,
+      admins: users.ADMIN || 0,
+      pendingFacultyApprovals: pendingFaculty.length,
+      unassignedStudents,
+      totalProjects,
+      attendancePercentage: attendanceStats.percentage,
+    },
+    pendingFaculty,
+    attendanceStats,
+  };
+};
+
+const getDashboard = (user) => {
+  switch (user.role) {
+    case "FACULTY":
+      return getFacultyDashboard(user);
+    case "HOD":
+      return getHodDashboard(user);
+    case "ADMIN":
+      return getAdminDashboard(user);
+    default:
+      return getStudentDashboard(user);
+  }
+};
+
+module.exports = { getDashboard };

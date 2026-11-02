@@ -1,4 +1,6 @@
 const express = require("express");
+const { z } = require("zod");
+const { idSchema } = require("../validators/common.validator");
 const teamController = require("../controllers/team.controller");
 const { authenticate } = require("../middleware/auth.middleware");
 const { authorizeRoles } = require("../middleware/role.middleware");
@@ -11,6 +13,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get("/", asyncHandler(teamController.getTeams));
+router.get("/available-students", authorizeRoles("FACULTY", "ADMIN"), asyncHandler(teamController.getAvailableStudents));
 
 router.post(
   "/",
@@ -24,6 +27,13 @@ router.post(
   authorizeRoles("FACULTY"),
   validate(assignStudentSchema),
   asyncHandler(teamController.assignStudent)
+);
+
+router.delete(
+  "/:id/members/:studentId",
+  authorizeRoles("FACULTY"),
+  validate(z.object({ id: idSchema, studentId: idSchema }), "params"),
+  asyncHandler(teamController.removeStudent)
 );
 
 module.exports = router;
