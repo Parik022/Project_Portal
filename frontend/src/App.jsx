@@ -10,6 +10,8 @@ import TeamsPage from "@/pages/TeamsPage";
 import SubmissionsPage from "@/pages/SubmissionsPage";
 import AttendancePage from "@/pages/AttendancePage";
 import SettingsPage from "@/pages/SettingsPage";
+import UsersPage from "@/pages/UsersPage";
+import NotificationsPage from "@/pages/NotificationsPage";
 
 function PublicOnly({ children }) {
   const { user, loading } = useAuth();
@@ -47,7 +49,11 @@ export default function App() {
               <Route path="/teams" element={<TeamsPage />} />
               <Route path="/submissions" element={<SubmissionsPage />} />
               <Route path="/attendance" element={<AttendancePage />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/settings" element={<SettingsPage />} />
+              <Route element={<ProtectedRoute roles={["ADMIN", "HOD"]} />}>
+                <Route path="/users" element={<UsersPage />} />
+              </Route>
             </Route>
           </Route>
 

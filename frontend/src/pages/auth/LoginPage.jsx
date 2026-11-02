@@ -1,10 +1,20 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Alert } from "@/components/ui/alert";
+
+// Seeded demo accounts (see backend/prisma/seed.js) so reviewers can try every role.
+const DEMO_ACCOUNTS = [
+  { label: "Student", email: "student1@srmist.edu.in" },
+  { label: "Faculty", email: "faculty1@srmist.edu.in" },
+  { label: "HOD", email: "hod.cse@srmist.edu.in" },
+  { label: "Admin", email: "admin@srmist.edu.in" },
+];
+const DEMO_PASSWORD = "Password123";
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -12,6 +22,7 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [params] = useSearchParams();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -67,11 +78,10 @@ export default function LoginPage() {
             </CardHeader>
             <CardContent className="pt-6">
               <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                  <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-sm text-red-700">
-                    {error}
-                  </p>
+                {params.get("expired") && !error && (
+                  <Alert tone="warning">Your session expired. Please sign in again.</Alert>
                 )}
+                <Alert tone="error">{error}</Alert>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email / NetID</Label>
                   <Input
@@ -99,6 +109,23 @@ export default function LoginPage() {
                   {loading ? "Signing in…" : "Login"}
                 </Button>
               </form>
+              <div className="mt-6 rounded-lg border border-dashed border-border p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
+                  Demo accounts · password {DEMO_PASSWORD}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {DEMO_ACCOUNTS.map((account) => (
+                    <button
+                      key={account.email}
+                      type="button"
+                      onClick={() => setForm({ email: account.email, password: DEMO_PASSWORD })}
+                      className="rounded-md border border-border bg-white px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:border-primary/30 hover:bg-accent-soft"
+                    >
+                      {account.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <p className="mt-6 text-center text-sm text-muted">
                 New here?{" "}
                 <Link to="/register" className="font-semibold text-primary hover:underline">
