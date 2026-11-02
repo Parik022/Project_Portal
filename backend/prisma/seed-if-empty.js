@@ -1,6 +1,6 @@
 // Runs the demo seed only when the database has no users yet.
 // Safe to call on every deploy: it never wipes real data.
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 const { execFileSync } = require("child_process");
 const path = require("path");
 const { prisma } = require("../src/config/database");

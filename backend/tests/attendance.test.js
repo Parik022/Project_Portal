@@ -71,8 +71,8 @@ describe("POST /attendance (student check-in)", () => {
 
   it("blocks weekend check-ins", async () => {
     const { student } = await setupStudent();
-    const token = await tokenFor(student);
     freezeDate(SATURDAY);
+    const token = await tokenFor(student); // issue the token on Saturday so it isn't expired
     const res = await mark(token);
     expect(res.status).toBe(400);
   });

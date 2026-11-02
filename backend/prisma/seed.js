@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 const bcrypt = require("bcryptjs");
 const { prisma } = require("../src/config/database");
 const { todayIST, countWorkingDays, isWeekend } = require("../src/utils/date");
