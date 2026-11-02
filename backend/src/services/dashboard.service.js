@@ -1,9 +1,10 @@
 const { prisma } = require("../config/database");
 const attendanceService = require("./attendance.service");
+const { withDeadline } = require("./submission.service");
 
 const recentSubmissionInclude = {
   student: { select: { id: true, name: true } },
-  project: { select: { id: true, title: true } },
+  project: { select: { id: true, title: true, startDate: true, createdAt: true } },
 };
 
 const getStudentDashboard = async (student) => {
@@ -43,9 +44,10 @@ const getStudentDashboard = async (student) => {
 
 const getFacultyDashboard = async (faculty) => {
   const facultyId = faculty.id;
-  const [totalProjects, totalTeams, pendingReviews, recentSubmissions, projects, students, attendanceStats] =
+  const [pendingProposals, totalProjects, totalTeams, pendingReviews, recentSubmissions, projects, students, attendanceStats] =
     await Promise.all([
-      prisma.project.count({ where: { facultyId } }),
+      prisma.project.count({ where: { facultyId, status: "PROPOSED" } }),
+      prisma.project.count({ where: { facultyId, status: { notIn: ["PROPOSED", "REJECTED"] } } }),
       prisma.team.count({ where: { project: { facultyId } } }),
       prisma.submission.count({ where: { project: { facultyId }, status: "PENDING" } }),
       prisma.submission.findMany({
@@ -55,8 +57,8 @@ const getFacultyDashboard = async (faculty) => {
         include: recentSubmissionInclude,
       }),
       prisma.project.findMany({
-        where: { facultyId },
-        select: { id: true, title: true, progressPercentage: true, _count: { select: { teams: true, submissions: true } } },
+        where: { facultyId, status: { notIn: ["PROPOSED", "REJECTED"] } },
+        select: { id: true, title: true, status: true, deadline: true, progressPercentage: true, _count: { select: { teams: true, submissions: true } } },
         orderBy: { createdAt: "desc" },
         take: 5,
       }),
@@ -71,12 +73,13 @@ const getFacultyDashboard = async (faculty) => {
       totalTeams,
       guidedStudents: attendanceStats.students,
       pendingReviews,
+      pendingProposals,
       pendingAttendance: attendanceStats.pendingVerification,
       attendancePercentage: attendanceStats.percentage,
     },
     attendanceStats,
     students,
-    recentSubmissions,
+    recentSubmissions: recentSubmissions.map(withDeadline),
     projectProgress: projects,
   };
 };
@@ -109,7 +112,7 @@ const getHodDashboard = async (hod) => {
     },
     attendanceStats,
     students,
-    recentSubmissions,
+    recentSubmissions: recentSubmissions.map(withDeadline),
   };
 };
 

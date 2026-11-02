@@ -6,7 +6,8 @@ import { navFor, NAV_ITEMS } from "./navItems";
 import { useAuth } from "@/context/AuthContext";
 import { ROLE_LABELS } from "@/lib/format";
 import { cn } from "@/lib/utils";
-import api from "@/lib/api";
+import api, { IS_DEMO } from "@/lib/api";
+import { DemoBanner } from "@/demo/DemoBanner";
 
 function getInitials(name) {
   return (name || "U")
@@ -49,6 +50,7 @@ export function AppLayout() {
     <div className="flex min-h-screen bg-background">
       <Sidebar />
       <main className="flex min-w-0 flex-1 flex-col">
+        {IS_DEMO && <DemoBanner />}
         <header className="sticky top-0 z-10 border-b border-border/80 bg-card/90 backdrop-blur-md supports-[backdrop-filter]:bg-card/75">
           <div className="flex items-center justify-between gap-4 px-4 py-3.5 sm:px-6 lg:px-8">
             <div className="flex items-center gap-3">

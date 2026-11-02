@@ -26,6 +26,14 @@ enum AttendanceStatus {
   REJECTED
 }
 
+enum ProjectStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+}
+
 enum SubmissionStatus {
   PENDING
   APPROVED
@@ -50,6 +58,8 @@ model User {
 
   students            User[]         @relation("GuideStudents")
   projectsFaculty     Project[]      @relation("FacultyProjects")
+  projectsProposed    Project[]      @relation("ProposedProjects")
+  teamsLed            Team[]         @relation("TeamLeader")
   submissions         Submission[]
   attendances         Attendance[]   @relation("StudentAttendance")
   verifiedAttendances Attendance[]   @relation("VerifiedAttendance")
@@ -75,19 +85,27 @@ model Internship {
 }
 
 model Project {
-  id                 String   @id @default(cuid())
+  id                 String        @id @default(cuid())
   title              String
   description        String
+  domain             String        @default("General")
+  status             ProjectStatus @default(APPROVED)
+  startDate          DateTime?     @db.Date
+  deadline           DateTime?     @db.Date
+  reviewRemark       String?
   facultyId          String
-  faculty            User     @relation("FacultyProjects", fields: [facultyId], references: [id], onDelete: Cascade)
-  progressPercentage Int      @default(0)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  faculty            User          @relation("FacultyProjects", fields: [facultyId], references: [id], onDelete: Cascade)
+  proposedById       String?
+  proposedBy         User?         @relation("ProposedProjects", fields: [proposedById], references: [id], onDelete: SetNull)
+  progressPercentage Int           @default(0)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
 
   teams       Team[]
   submissions Submission[]
 
   @@index([facultyId])
+  @@index([status])
 }
 
 model Team {
@@ -95,6 +113,8 @@ model Team {
   name      String
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  leaderId  String?
+  leader    User?   @relation("TeamLeader", fields: [leaderId], references: [id], onDelete: SetNull)
   members   User[]
 }
 

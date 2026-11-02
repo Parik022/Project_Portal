@@ -16,6 +16,7 @@ const router = express.Router();
 
 router.use(authenticate);
 
+router.get("/faculty", asyncHandler(userController.facultyDirectory));
 router.get("/", authorizeRoles("ADMIN", "HOD"), validate(listUsersQuerySchema, "query"), asyncHandler(userController.listUsers));
 router.post("/", authorizeRoles("ADMIN"), validate(createUserSchema), asyncHandler(userController.createUser));
 router.get("/:id", authorizeRoles("ADMIN", "HOD"), validate(idParamSchema, "params"), asyncHandler(userController.getUser));

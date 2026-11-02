@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { CalendarCheck, CheckCircle2, Clock, Download, Laptop, Building2, XCircle, Briefcase, Percent } from "lucide-react";
-import api from "@/lib/api";
+import api, { IS_DEMO } from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/context/AuthContext";
 import { formatDate, weekday } from "@/lib/format";
@@ -352,8 +352,19 @@ function StaffAttendance({ role }) {
     report.reload();
   };
 
+  const [csvNotice, setCsvNotice] = useState("");
   const downloadCsv = async () => {
     const res = await api.get("/attendance/report?format=csv", { responseType: "blob" });
+    if (IS_DEMO) {
+      // Hosted demo pages can't download files, so copy the CSV instead.
+      try {
+        await navigator.clipboard.writeText(await res.data.text());
+        setCsvNotice("CSV copied to your clipboard (downloads are disabled in the demo).");
+      } catch {
+        setCsvNotice("Your browser blocked the clipboard. In the real app this downloads a CSV file.");
+      }
+      return;
+    }
     const url = URL.createObjectURL(res.data);
     const link = Object.assign(document.createElement("a"), { href: url, download: "attendance-report.csv" });
     link.click();
@@ -375,6 +386,7 @@ function StaffAttendance({ role }) {
           </Button>
         }
       />
+      <Alert tone="info" className="mb-6">{csvNotice}</Alert>
 
       {st ? (
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">

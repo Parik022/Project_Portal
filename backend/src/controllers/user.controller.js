@@ -25,4 +25,8 @@ const deactivateUser = async (req, res) => {
   sendSuccess(res, await userService.deactivateUser(req.user, req.params.id), "User deactivated");
 };
 
-module.exports = { listUsers, getUser, createUser, updateUser, assignGuide, deactivateUser };
+const facultyDirectory = async (req, res) => {
+  sendSuccess(res, await userService.facultyDirectory(), "Faculty retrieved");
+};
+
+module.exports = { facultyDirectory, listUsers, getUser, createUser, updateUser, assignGuide, deactivateUser };

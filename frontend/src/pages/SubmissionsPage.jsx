@@ -3,7 +3,7 @@ import { ExternalLink, FileText, MessageSquare } from "lucide-react";
 import api from "@/lib/api";
 import { useApi } from "@/lib/useApi";
 import { useAuth } from "@/context/AuthContext";
-import { formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime } from "@/lib/format";
 import { PageHeader } from "@/components/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,13 +11,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
-import { StatusBadge } from "@/components/ui/badge";
+import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Alert, FieldError } from "@/components/ui/alert";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageSkeleton } from "@/components/ui/skeleton";
 
 const DESCRIPTIONS = {
-  STUDENT: "Submit one progress report per week. Your faculty approves it or asks for changes.",
+  STUDENT: "Submit one progress report per week, by the end of that project week. Your faculty approves it or asks for changes.",
   FACULTY: "Review weekly reports from students on your projects.",
   HOD: "Weekly reports across your department (read-only).",
   ADMIN: "Weekly reports across all departments.",
@@ -208,6 +208,7 @@ function ReportCard({ submission: s, isStudent, canReview, onChanged }) {
               Week {s.weekNumber} · {s.title}
             </span>
             <StatusBadge status={s.status} />
+            {s.isLate && <Badge variant="danger">Late</Badge>}
           </div>
           {!isStudent && (
             <p className="mt-1 text-xs text-muted">
@@ -229,7 +230,11 @@ function ReportCard({ submission: s, isStudent, canReview, onChanged }) {
               </div>
             </div>
           )}
-          <p className="mt-2 text-xs text-muted">Submitted {formatDateTime(s.createdAt)}</p>
+          <p className="mt-2 text-xs text-muted">
+            Submitted {formatDateTime(s.createdAt)}
+            {s.dueDate ? ` · due ${formatDate(s.dueDate)}` : ""}
+            {s.isLate ? " · submitted after the week ended" : ""}
+          </p>
         </div>
 
         <div className="flex shrink-0 gap-2">

@@ -9,6 +9,7 @@ import {
   FolderKanban,
   GraduationCap,
   Inbox,
+  Lightbulb,
   Percent,
   ShieldCheck,
   TrendingUp,
@@ -225,7 +226,16 @@ function StudentDashboard({ data, name }) {
                 </div>
               </div>
             ) : (
-              <EmptyState title="No project assigned" description="Your faculty will add you to a team and project." className="py-8" />
+              <EmptyState
+                title="No project yet"
+                description="Propose your own project to a faculty member, or wait to be added to a team."
+                action={
+                  <Button asChild size="sm">
+                    <Link to="/projects">Go to projects</Link>
+                  </Button>
+                }
+                className="py-8"
+              />
             )}
           </CardContent>
         </Card>
@@ -253,9 +263,10 @@ function FacultyDashboard({ data, name }) {
         <StatCard title="Checked in today" value={data.attendanceStats.checkedInToday} subtitle={`of ${s.guidedStudents}`} icon={CalendarCheck} />
       </div>
 
-      <div className="mt-8 grid gap-3 sm:grid-cols-2">
+      <div className="mt-8 grid gap-3 sm:grid-cols-3">
         <AttentionLink to="/attendance" icon={Clock} count={s.pendingAttendance} label="attendance records to verify" />
         <AttentionLink to="/submissions" icon={FileText} count={s.pendingReviews} label="reports to review" />
+        <AttentionLink to="/projects" icon={Lightbulb} count={s.pendingProposals} label="project proposals" />
       </div>
 
       <Card className="mt-8">
@@ -280,7 +291,9 @@ function FacultyDashboard({ data, name }) {
               data.projectProgress.map((p) => (
                 <div key={p.id}>
                   <div className="mb-2 flex justify-between text-sm">
-                    <span className="font-medium text-foreground">{p.title}</span>
+                    <Link to={`/projects/${p.id}`} className="font-medium text-foreground hover:text-primary">
+                      {p.title}
+                    </Link>
                     <span className="tabular-nums text-muted">{p.progressPercentage}%</span>
                   </div>
                   <ProgressBar value={p.progressPercentage} />

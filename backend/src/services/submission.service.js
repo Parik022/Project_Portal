@@ -1,10 +1,23 @@
 const { prisma } = require("../config/database");
 const { AppError } = require("../utils/AppError");
 const { notify } = require("./notification.service");
+const { ymdInIST, toDateOnly, formatYmd } = require("../utils/date");
 
 const include = {
   student: { select: { id: true, name: true, email: true, registerNo: true } },
-  project: { select: { id: true, title: true, facultyId: true } },
+  project: { select: { id: true, title: true, facultyId: true, startDate: true, createdAt: true } },
+};
+
+// Week N's report is due on the last day of week N, counted from the project's
+// start date. Late reports are accepted but flagged so faculty can see them.
+const withDeadline = (submission) => {
+  const project = submission.project;
+  if (!project) return submission;
+  const start = project.startDate ? new Date(project.startDate) : toDateOnly(ymdInIST(new Date(project.createdAt)));
+  const due = new Date(start);
+  due.setUTCDate(due.getUTCDate() + 7 * submission.weekNumber - 1);
+  const dueDate = formatYmd(due);
+  return { ...submission, dueDate, isLate: ymdInIST(new Date(submission.createdAt)) > dueDate };
 };
 
 // Which submissions a user may see.
@@ -44,26 +57,34 @@ const createSubmission = async (student, data) => {
     throw new AppError("You already submitted a report for this week", 409);
   }
 
-  const submission = await prisma.submission.create({
-    data: { ...data, studentId: student.id, projectId: project.id },
-    include,
-  });
+  if (!["APPROVED", "IN_PROGRESS"].includes(project.status)) {
+    throw new AppError("Reports can be submitted once your project is approved", 400);
+  }
+
+  const submission = withDeadline(
+    await prisma.submission.create({
+      data: { ...data, studentId: student.id, projectId: project.id },
+      include,
+    })
+  );
 
   await notify(project.facultyId, `${student.name} submitted the week ${data.weekNumber} report`, "SUBMISSION_CREATED");
   return submission;
 };
 
 const listSubmissions = async (user) =>
-  prisma.submission.findMany({
-    where: scopeFor(user),
-    include,
-    orderBy: user.role === "STUDENT" ? { weekNumber: "desc" } : { createdAt: "desc" },
-  });
+  (
+    await prisma.submission.findMany({
+      where: scopeFor(user),
+      include,
+      orderBy: user.role === "STUDENT" ? { weekNumber: "desc" } : { createdAt: "desc" },
+    })
+  ).map(withDeadline);
 
 const getSubmissionById = async (id, user) => {
   const submission = await prisma.submission.findFirst({ where: { id, ...scopeFor(user) }, include });
   if (!submission) throw new AppError("Submission not found", 404);
-  return submission;
+  return withDeadline(submission);
 };
 
 // Students can edit a report until it is approved; editing sends it back for review.
@@ -74,11 +95,13 @@ const updateSubmission = async (id, student, data) => {
     throw new AppError("Approved reports can no longer be edited", 400);
   }
 
-  const updated = await prisma.submission.update({
-    where: { id },
-    data: { ...data, status: "PENDING" },
-    include,
-  });
+  const updated = withDeadline(
+    await prisma.submission.update({
+      where: { id },
+      data: { ...data, status: "PENDING" },
+      include,
+    })
+  );
 
   if (submission.status === "CHANGES_REQUESTED") {
     await notify(
@@ -96,11 +119,13 @@ const reviewSubmission = async (id, reviewer, { status, feedback }) => {
   });
   if (!submission) throw new AppError("Submission not found or access denied", 404);
 
-  const updated = await prisma.submission.update({
-    where: { id },
-    data: { status, feedback: feedback ?? null, reviewedAt: new Date() },
-    include,
-  });
+  const updated = withDeadline(
+    await prisma.submission.update({
+      where: { id },
+      data: { status, feedback: feedback ?? null, reviewedAt: new Date() },
+      include,
+    })
+  );
 
   await notify(
     submission.studentId,
@@ -112,4 +137,4 @@ const reviewSubmission = async (id, reviewer, { status, feedback }) => {
   return updated;
 };
 
-module.exports = { createSubmission, listSubmissions, getSubmissionById, updateSubmission, reviewSubmission };
+module.exports = { createSubmission, listSubmissions, getSubmissionById, updateSubmission, reviewSubmission, withDeadline };

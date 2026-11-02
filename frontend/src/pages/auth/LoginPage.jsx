@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert } from "@/components/ui/alert";
+import { IS_DEMO } from "@/lib/api";
 
 // Seeded demo accounts (see backend/prisma/seed.js) so reviewers can try every role.
 const DEMO_ACCOUNTS = [
@@ -78,6 +79,11 @@ export default function LoginPage() {
             </CardHeader>
             <CardContent className="pt-6">
               <form onSubmit={handleSubmit} className="space-y-4">
+                {IS_DEMO && (
+                  <Alert tone="info">
+                    Demo mode: pick a role below to log in. Everything runs in your browser.
+                  </Alert>
+                )}
                 {params.get("expired") && !error && (
                   <Alert tone="warning">Your session expired. Please sign in again.</Alert>
                 )}

@@ -1,163 +1,220 @@
 const { prisma } = require("../config/database");
 const { AppError } = require("../utils/AppError");
+const { toDateOnly } = require("../utils/date");
+const { toPrismaPage, paginated } = require("../utils/pagination");
+const { notify } = require("./notification.service");
+const { withDeadline } = require("./submission.service");
 
-const createProject = async (facultyId, data) => {
-  return prisma.project.create({
+const person = { select: { id: true, name: true, email: true } };
+
+const listInclude = {
+  faculty: person,
+  proposedBy: person,
+  teams: { include: { leader: { select: { id: true, name: true } }, members: person } },
+  _count: { select: { submissions: true, teams: true } },
+};
+
+// Which projects a user can see.
+const scopeFor = async (user) => {
+  switch (user.role) {
+    case "FACULTY":
+      return { facultyId: user.id };
+    case "HOD":
+      return { faculty: { department: user.department } };
+    case "ADMIN":
+      return {};
+    default: {
+      const me = await prisma.user.findUnique({ where: { id: user.id }, include: { team: true } });
+      return { OR: [{ proposedById: user.id }, ...(me?.team ? [{ id: me.team.projectId }] : [])] };
+    }
+  }
+};
+
+const dateFields = (data) => ({
+  ...(data.startDate !== undefined ? { startDate: data.startDate ? toDateOnly(data.startDate) : null } : {}),
+  ...(data.deadline !== undefined ? { deadline: data.deadline ? toDateOnly(data.deadline) : null } : {}),
+});
+
+const listProjects = async (user, query) => {
+  const where = {
+    AND: [
+      await scopeFor(user),
+      query.status ? { status: query.status } : {},
+      query.domain ? { domain: query.domain } : {},
+      query.facultyId && ["ADMIN", "HOD"].includes(user.role) ? { facultyId: query.facultyId } : {},
+      query.search
+        ? {
+            OR: [
+              { title: { contains: query.search, mode: "insensitive" } },
+              { description: { contains: query.search, mode: "insensitive" } },
+            ],
+          }
+        : {},
+    ],
+  };
+
+  const [items, total, domains] = await Promise.all([
+    prisma.project.findMany({
+      where,
+      include: listInclude,
+      // Projects without a deadline sort after those with one.
+      orderBy: [
+        query.sort === "deadline" ? { deadline: { sort: query.order, nulls: "last" } } : { [query.sort]: query.order },
+        { createdAt: "desc" },
+      ],
+      ...toPrismaPage(query),
+    }),
+    prisma.project.count({ where }),
+    prisma.project.findMany({ where: await scopeFor(user), distinct: ["domain"], select: { domain: true } }),
+  ]);
+
+  return { ...paginated(items, total, query), domains: domains.map((d) => d.domain).sort() };
+};
+
+const getProjectById = async (id, user) => {
+  const project = await prisma.project.findFirst({
+    where: { AND: [{ id }, await scopeFor(user)] },
+    include: {
+      ...listInclude,
+      submissions: {
+        include: { student: { select: { id: true, name: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      },
+    },
+  });
+  if (!project) throw new AppError("Project not found", 404);
+  // Students only see their own reports inside a project.
+  const submissions = project.submissions
+    .filter((s) => user.role !== "STUDENT" || s.studentId === user.id)
+    .map((s) => withDeadline({ ...s, project }));
+  return { ...project, submissions };
+};
+
+const createProject = async (facultyId, data) =>
+  prisma.project.create({
     data: {
       title: data.title,
       description: data.description,
-      facultyId,
+      domain: data.domain,
       progressPercentage: data.progressPercentage ?? 0,
+      status: "APPROVED",
+      facultyId,
+      ...dateFields(data),
     },
-    include: {
-      faculty: { select: { id: true, name: true, email: true } },
-      teams: true,
-      _count: { select: { submissions: true, teams: true } },
-    },
-  });
-};
-
-const getFacultyProjects = async (facultyId) => {
-  return prisma.project.findMany({
-    where: { facultyId },
-    include: {
-      teams: {
-        include: {
-          members: { select: { id: true, name: true, email: true } },
-          _count: { select: { members: true } },
-        },
-      },
-      _count: { select: { submissions: true, teams: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
-};
-
-// HODs see projects run by faculty in their department; admins see everything.
-const getAllProjects = async (user) =>
-  prisma.project.findMany({
-    where: user.role === "HOD" ? { faculty: { department: user.department } } : {},
-    include: {
-      faculty: { select: { id: true, name: true, email: true } },
-      teams: {
-        include: {
-          members: { select: { id: true, name: true, email: true } },
-          _count: { select: { members: true } },
-        },
-      },
-      _count: { select: { submissions: true, teams: true } },
-    },
-    orderBy: { createdAt: "desc" },
+    include: listInclude,
   });
 
-const getStudentProjects = async (studentId) => {
-  const student = await prisma.user.findUnique({
-    where: { id: studentId },
-    include: {
-      team: {
-        include: {
-          project: {
-            include: {
-              faculty: { select: { id: true, name: true, email: true } },
-              teams: {
-                include: {
-                  members: { select: { id: true, name: true, email: true } },
-                },
-              },
-            },
-          },
-        },
-      },
+const proposeProject = async (student, data) => {
+  const faculty = await prisma.user.findUnique({ where: { id: data.facultyId } });
+  if (!faculty || faculty.role !== "FACULTY" || !faculty.isActive) {
+    throw new AppError("Choose an active faculty member", 400);
+  }
+  const pending = await prisma.project.findFirst({ where: { proposedById: student.id, status: "PROPOSED" } });
+  if (pending) throw new AppError("You already have a proposal waiting for review", 409);
+
+  const project = await prisma.project.create({
+    data: {
+      title: data.title,
+      description: data.description,
+      domain: data.domain,
+      status: "PROPOSED",
+      facultyId: faculty.id,
+      proposedById: student.id,
+      ...dateFields(data),
     },
+    include: listInclude,
   });
-
-  if (!student?.team?.project) {
-    return [];
-  }
-
-  return [student.team.project];
-};
-
-const getProjectById = async (projectId, user) => {
-  const project = await prisma.project.findUnique({
-    where: { id: projectId },
-    include: {
-      faculty: { select: { id: true, name: true, email: true } },
-      teams: {
-        include: {
-          members: { select: { id: true, name: true, email: true } },
-        },
-      },
-      _count: { select: { submissions: true } },
-    },
-  });
-
-  if (!project) {
-    throw new AppError("Project not found", 404);
-  }
-
-  if (user.role === "FACULTY" && project.facultyId !== user.id) {
-    throw new AppError("You do not have access to this project", 403);
-  }
-
-  if (user.role === "HOD") {
-    const faculty = await prisma.user.findUnique({ where: { id: project.facultyId } });
-    if (faculty?.department !== user.department) {
-      throw new AppError("You do not have access to this project", 403);
-    }
-  }
-
-  if (user.role === "STUDENT") {
-    const student = await prisma.user.findUnique({
-      where: { id: user.id },
-      include: { team: true },
-    });
-    if (!student?.team || student.team.projectId !== projectId) {
-      throw new AppError("You do not have access to this project", 403);
-    }
-  }
-
+  await notify(faculty.id, `${student.name} proposed a project: "${project.title}"`, "PROJECT_PROPOSED");
   return project;
 };
 
-const updateProject = async (projectId, facultyId, data) => {
+const findManageable = async (id, user) => {
   const project = await prisma.project.findFirst({
-    where: { id: projectId, facultyId },
+    where: { id, ...(user.role === "FACULTY" ? { facultyId: user.id } : {}) },
+  });
+  if (!project) throw new AppError("Project not found or access denied", 404);
+  return project;
+};
+
+// Approving a student's proposal also creates their team with them as leader,
+// in one transaction so we never end up with an approved project and no team.
+const reviewProposal = async (id, reviewer, { decision, remark }) => {
+  const project = await findManageable(id, reviewer);
+  if (project.status !== "PROPOSED") throw new AppError("Only proposals waiting for review can be approved or rejected", 400);
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.project.update({
+      where: { id },
+      data: { status: decision, reviewRemark: remark ?? null },
+    });
+
+    if (decision === "APPROVED" && project.proposedById) {
+      const proposer = await tx.user.findUnique({ where: { id: project.proposedById } });
+      if (proposer && !proposer.teamId) {
+        const team = await tx.team.create({
+          data: { name: `${project.title} Team`, projectId: id, leaderId: proposer.id },
+        });
+        await tx.user.update({ where: { id: proposer.id }, data: { teamId: team.id } });
+      }
+    }
+    return result;
   });
 
-  if (!project) {
-    throw new AppError("Project not found or access denied", 404);
-  }
+  await notify(
+    project.proposedById,
+    decision === "APPROVED"
+      ? `Your project "${project.title}" was approved`
+      : `Your project "${project.title}" was rejected: ${remark}`,
+    "PROJECT_REVIEWED"
+  );
+  return updated;
+};
 
+const updateProject = async (id, user, data) => {
+  const project = await findManageable(id, user);
+  if (data.status && ["PROPOSED", "REJECTED"].includes(project.status)) {
+    throw new AppError("Review the proposal before changing its status", 400);
+  }
+  const { startDate, deadline, ...rest } = data;
   return prisma.project.update({
-    where: { id: projectId },
-    data,
-    include: {
-      faculty: { select: { id: true, name: true, email: true } },
-      teams: true,
+    where: { id },
+    data: {
+      ...rest,
+      ...dateFields({ startDate, deadline }),
+      ...(data.status === "COMPLETED" ? { progressPercentage: 100 } : {}),
     },
+    include: listInclude,
   });
 };
 
-const deleteProject = async (projectId, facultyId) => {
-  const project = await prisma.project.findFirst({
-    where: { id: projectId, facultyId },
-  });
+const assignFaculty = async (id, facultyId) => {
+  const faculty = await prisma.user.findUnique({ where: { id: facultyId } });
+  if (!faculty || faculty.role !== "FACULTY" || !faculty.isActive) throw new AppError("Choose an active faculty member", 400);
+  const project = await prisma.project.findUnique({ where: { id } });
+  if (!project) throw new AppError("Project not found", 404);
+  const updated = await prisma.project.update({ where: { id }, data: { facultyId }, include: listInclude });
+  await notify(facultyId, `You are now the faculty for "${project.title}"`, "PROJECT_ASSIGNED");
+  return updated;
+};
 
-  if (!project) {
-    throw new AppError("Project not found or access denied", 404);
-  }
-
-  await prisma.project.delete({ where: { id: projectId } });
+const deleteProject = async (id, user) => {
+  await findManageable(id, user);
+  // Students in the project's teams are released before the cascade removes the teams.
+  await prisma.$transaction([
+    prisma.user.updateMany({ where: { team: { projectId: id } }, data: { teamId: null } }),
+    prisma.project.delete({ where: { id } }),
+  ]);
   return { message: "Project deleted successfully" };
 };
 
 module.exports = {
-  createProject,
-  getFacultyProjects,
-  getStudentProjects,
-  getAllProjects,
+  listProjects,
   getProjectById,
+  createProject,
+  proposeProject,
+  reviewProposal,
   updateProject,
+  assignFaculty,
   deleteProject,
 };
