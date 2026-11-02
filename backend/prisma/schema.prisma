@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
+  engineType = "client"
 }
 
 datasource db {
@@ -10,32 +11,67 @@ datasource db {
 enum Role {
   FACULTY
   STUDENT
+  HOD
+  ADMIN
+}
+
+enum WorkMode {
+  ONSITE
+  REMOTE
 }
 
 enum AttendanceStatus {
-  PRESENT
-  ABSENT
+  PENDING
+  VERIFIED
+  REJECTED
 }
 
 enum SubmissionStatus {
   PENDING
-  REVIEWED
+  APPROVED
+  CHANGES_REQUESTED
 }
 
 model User {
+  id         String   @id @default(cuid())
+  name       String
+  email      String   @unique
+  password   String
+  role       Role
+  registerNo String?  @unique
+  department String?
+  isActive   Boolean  @default(true)
+  teamId     String?
+  team       Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  guideId    String?
+  guide      User?    @relation("GuideStudents", fields: [guideId], references: [id], onDelete: SetNull)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  students            User[]         @relation("GuideStudents")
+  projectsFaculty     Project[]      @relation("FacultyProjects")
+  submissions         Submission[]
+  attendances         Attendance[]   @relation("StudentAttendance")
+  verifiedAttendances Attendance[]   @relation("VerifiedAttendance")
+  internship          Internship?
+  notifications       Notification[]
+
+  @@index([role])
+  @@index([department])
+  @@index([guideId])
+}
+
+model Internship {
   id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      Role
-  teamId    String?
-  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  studentId String   @unique
+  student   User     @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  company   String
+  position  String
+  startDate DateTime @db.Date
+  endDate   DateTime @db.Date
+  mode      WorkMode @default(REMOTE)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  projectsFaculty Project[]    @relation("FacultyProjects")
-  submissions     Submission[]
-  attendances     Attendance[]
 }
 
 model Project {
@@ -50,10 +86,12 @@ model Project {
 
   teams       Team[]
   submissions Submission[]
+
+  @@index([facultyId])
 }
 
 model Team {
-  id        String @id @default(cuid())
+  id        String  @id @default(cuid())
   name      String
   projectId String
   project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -65,7 +103,10 @@ model Submission {
   weekNumber  Int
   title       String
   description String
+  link        String?
   status      SubmissionStatus @default(PENDING)
+  feedback    String?
+  reviewedAt  DateTime?
   studentId   String
   student     User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
   projectId   String
@@ -73,20 +114,38 @@ model Submission {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  attendance Attendance?
-
   @@unique([studentId, weekNumber])
+  @@index([projectId, status])
 }
 
 model Attendance {
   id           String           @id @default(cuid())
   studentId    String
-  student      User             @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  submissionId String           @unique
-  submission   Submission       @relation(fields: [submissionId], references: [id], onDelete: Cascade)
-  weekNumber   Int
-  status       AttendanceStatus @default(PRESENT)
+  student      User             @relation("StudentAttendance", fields: [studentId], references: [id], onDelete: Cascade)
+  date         DateTime         @db.Date
+  mode         WorkMode
+  summary      String
+  status       AttendanceStatus @default(PENDING)
+  remark       String?
+  verifiedById String?
+  verifiedBy   User?            @relation("VerifiedAttendance", fields: [verifiedById], references: [id], onDelete: SetNull)
+  verifiedAt   DateTime?
   createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
-  @@unique([studentId, weekNumber])
+  @@unique([studentId, date])
+  @@index([date])
+  @@index([status])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  message   String
+  type      String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
 }
