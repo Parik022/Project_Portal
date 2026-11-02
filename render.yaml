@@ -1,0 +1,28 @@
+# Render Blueprint: creates the ProjectFlow API as a free web service.
+# The database lives on Neon; paste its connection string into DATABASE_URL.
+services:
+  - type: web
+    name: projectflow-api
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm run render-build
+    startCommand: npm start
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 1d
+      - key: CLIENT_URL
+        sync: false
+      - key: ALLOWED_EMAIL_DOMAIN
+        value: srmist.edu.in
+      - key: LOW_ATTENDANCE_THRESHOLD
+        value: "75"
+      - key: LOGIN_RATE_LIMIT
+        value: "5"
